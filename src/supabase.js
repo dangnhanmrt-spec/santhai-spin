@@ -211,3 +211,18 @@ export async function removeBlacklist(phone) {
 export async function updateSpecialStatus(id, status, note="") {
   return patch("spin_special_winners", `id=eq.${id}`, { contact_status:status, staff_note:note });
 }
+
+// ─── VOUCHER DETAIL MANAGEMENT ───
+export async function loadPrizeVouchers(prizeId, status = null) {
+  const f = status ? `&status=eq.${status}` : "";
+  return get("spin_vouchers", `prize_id=eq.${prizeId}&order=created_at.desc&limit=500${f}`);
+}
+
+export async function deleteVoucher(id) {
+  return remove("spin_vouchers", `id=eq.${id}`);
+}
+
+export async function bulkDeleteVouchers(ids) {
+  if (!ids.length) return false;
+  return remove("spin_vouchers", `id=in.(${ids.join(",")})`);
+}
