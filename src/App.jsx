@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes,
+  doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
   loadStoreStats, loadStores,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
@@ -488,12 +488,39 @@ function CustomerPage({ onAdmin }) {
 }
 
 /* ─── ADMIN PAGE ─── */
+const ADMIN_TOKEN = typeof btoa !== "undefined" ? btoa(ADMIN_PWD + "_st26") : "";
+
 function AdminPage({ onBack }) {
-  const [pwd, setPwd]         = useState("");
-  const [authed, setAuthed]   = useState(false);
-  const [pwdErr, setPwdErr]   = useState("");
-  const [tab, setTab]         = useState("prizes");
+  // ── Auth với localStorage ──
+  const [pwd, setPwd]       = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [pwdErr, setPwdErr] = useState("");
+
+  // Kiểm tra session đã lưu chưa (chạy 1 lần khi mount)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("santhai_admin_v2") === ADMIN_TOKEN) setAuthed(true);
+    } catch {}
+  }, []);
+
+  const login = () => {
+    if (pwd === ADMIN_PWD) {
+      try { localStorage.setItem("santhai_admin_v2", ADMIN_TOKEN); } catch {}
+      setAuthed(true); setPwdErr("");
+    } else {
+      setPwdErr("Sai mật khẩu.");
+    }
+  };
+
+  // Logout SYNC — không dùng async
+  const doLogout = () => {
+    try { localStorage.removeItem("santhai_admin_v2"); } catch {}
+    window.location.replace(window.location.origin);
+  };
+
+  const [tab, setTab]       = useState("prizes");
   const [loading, setLoading] = useState(false);
+  const [dbStatus, setDbStatus] = useState(null); // null | "ok" | "error"
 
   // Data
   const [prizes,   setPrizes]   = useState([]);
@@ -508,7 +535,7 @@ function AdminPage({ onBack }) {
   const [prizeMsg,  setPrizeMsg]  = useState("");
 
   // Reconcile
-  const [selected, setSelected]     = useState(new Set());
+  const [selected,    setSelected]    = useState(new Set());
   const [reconResult, setReconResult] = useState(null);
 
   // Voucher import
@@ -519,19 +546,19 @@ function AdminPage({ onBack }) {
   // Blacklist
   const [blPhone, setBlPhone] = useState("");
 
-  const login = () => {
-    if (pwd === ADMIN_PWD) { setAuthed(true); setPwdErr(""); }
-    else setPwdErr("Sai mật khẩu.");
-  };
-
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [p, s, sp, b, v] = await Promise.all([
-      loadAllPrizes(), loadSpins(date), loadSpecialWinners(), loadBlacklist(), loadVouchers(),
-    ]);
-    setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
-    setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
-    setVouchers(Array.isArray(v)?v:[]);
+    // Kiểm tra kết nối DB trước
+    const conn = await testConnection();
+    setDbStatus(conn.ok ? "ok" : conn.error || "error");
+    if (conn.ok) {
+      const [p, s, sp, b, v] = await Promise.all([
+        loadAllPrizes(), loadSpins(date), loadSpecialWinners(), loadBlacklist(), loadVouchers(),
+      ]);
+      setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
+      setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
+      setVouchers(Array.isArray(v)?v:[]);
+    }
     setLoading(false);
   }, [date]);
 
@@ -541,18 +568,19 @@ function AdminPage({ onBack }) {
   const handleSavePrize = async () => {
     const name = editPrize?.name?.trim();
     const prob = parseFloat(editPrize?.probability);
-    if (!name)              return setPrizeMsg("❌ Cần nhập tên giải thưởng");
+    if (!name)                   return setPrizeMsg("❌ Cần nhập tên giải thưởng");
     if (isNaN(prob) || prob < 0) return setPrizeMsg("❌ Xác suất không hợp lệ");
     setPrizeMsg("⏳ Đang lưu…");
-    const ok = await savePrize(editPrize);
-    if (ok) {
+    const res = await savePrize(editPrize);
+    if (res?.ok) {
       setPrizeMsg("✅ Đã lưu thành công!");
       setEditPrize(null);
       loadAll();
     } else {
-      setPrizeMsg("❌ Lỗi khi lưu. Kiểm tra Supabase hoặc chạy lại schema_v2.sql");
+      // Hiển thị lỗi thật từ server
+      setPrizeMsg("❌ " + (res?.error || "Lỗi không xác định"));
     }
-    setTimeout(() => setPrizeMsg(""), 4000);
+    setTimeout(() => setPrizeMsg(""), 6000);
   };
   const handleDeletePrize = async (id) => {
     if (!confirm("Xóa giải thưởng này?")) return;
@@ -618,8 +646,24 @@ function AdminPage({ onBack }) {
       <style>{G}</style>
       <div style={{ background:"linear-gradient(135deg,#f97316,#ea580c)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
         <div style={{ fontSize:17,fontWeight:900,color:"#fff" }}>⚙️ Admin — SanThai Spin</div>
-        <button onClick={onBack} style={{ background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,color:"#fff",padding:"6px 14px",cursor:"pointer",fontSize:13 }}>← Thoát</button>
+        <button onClick={doLogout} style={{ background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,color:"#fff",padding:"6px 14px",cursor:"pointer",fontSize:13 }}>← Thoát</button>
       </div>
+      {/* DB Status Banner */}
+      {dbStatus && dbStatus !== "ok" && (
+        <div style={{ background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:0,padding:"12px 20px",fontSize:14,color:"#dc2626",display:"flex",alignItems:"center",gap:10 }}>
+          <span style={{ fontSize:20 }}>⚠️</span>
+          <div>
+            <strong>Chưa kết nối được database:</strong> {dbStatus}<br/>
+            <span style={{ fontSize:13 }}>→ Vào <strong>Supabase SQL Editor</strong> → chạy file <strong>schema_v2.sql</strong> → nhấn <strong>🔄 Làm mới</strong></span>
+          </div>
+        </div>
+      )}
+      {dbStatus === "ok" && prizes.length === 0 && (
+        <div style={{ background:"#fffbeb",border:"2px solid #f59e0b",borderRadius:0,padding:"12px 20px",fontSize:14,color:"#92400e",display:"flex",alignItems:"center",gap:10 }}>
+          <span style={{ fontSize:20 }}>💡</span>
+          <div>Kết nối OK nhưng chưa có giải thưởng. Nhấn <strong>🔄 Load giải mặc định</strong> để thêm 16 giải sẵn có.</div>
+        </div>
+      )}
       <div style={{ padding:16 }}>
         <div style={{ display:"flex",gap:6,marginBottom:16,flexWrap:"wrap" }}>
           {TABS.map(t=>(
