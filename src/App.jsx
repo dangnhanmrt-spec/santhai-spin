@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import * as XLSX from "xlsx";
 import {
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
   loadStoreStats, loadStores,
@@ -6,7 +7,8 @@ import {
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
 } from "./supabase.js";
 
-const ADMIN_PWD = "Santhai2024";
+const ADMIN_PWD   = "Santhai2024";
+const LOW_STOCK   = 10; // cảnh báo khi số voucher còn lại < 10
 
 /* ─── GLOBAL STYLES ─── */
 const G = `
@@ -589,11 +591,34 @@ function AdminPage({ onBack }) {
   const totalProb = prizes.filter(p=>p.active).reduce((s,p) => s+(+p.probability||0), 0);
 
   const exportCSV = () => {
-    const rows=[["Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Hợp lệ","Thời gian"].join(",")];
-    spins.forEach(s=>rows.push([s.bill_code,s.phone,`"${s.store_name||""}"`,`"${s.prize_name}"`,s.voucher_code||"",s.is_valid?"✓":"✗",s.spun_at].join(",")));
+    const rows=[["Mã Bill","SĐT","Cửa hàng","Giải thưởng","Mã Voucher","Hợp lệ","Thời gian"].join(",")];
+    spins.forEach(s=>rows.push([
+      s.bill_code, s.phone, `"${s.store_name||""}"`, `"${s.prize_name}"`,
+      s.voucher_code||"", s.is_valid?"Có":"Không",
+      new Date(s.spun_at).toLocaleString("vi-VN")
+    ].join(",")));
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["\uFEFF"+rows.join("\n")],{type:"text/csv;charset=utf-8;"}));
     a.download=`santhai_spins_${date}.csv`; a.click();
+  };
+
+  const exportXLSX = () => {
+    const data = spins.map(s => ({
+      "Mã Bill":     s.bill_code,
+      "SĐT":         s.phone,
+      "Cửa hàng":    s.store_name || "",
+      "Giải thưởng": s.prize_name,
+      "Mã Voucher":  s.voucher_code || "",
+      "Hợp lệ":      s.is_valid ? "Có" : "Không",
+      "Shadow Ban":  s.shadow_ban_hit ? "Có" : "Không",
+      "Thời gian":   new Date(s.spun_at).toLocaleString("vi-VN"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    // Column widths
+    ws["!cols"] = [16,14,20,22,16,8,10,22].map(w=>({wch:w}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Lịch sử quay");
+    XLSX.writeFile(wb, `santhai_spins_${date}.xlsx`);
   };
 
   const applyInvalid = async () => {
@@ -777,11 +802,18 @@ function AdminPage({ onBack }) {
           <div>
             <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center" }}>
               <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{ ...inp }}/>
-              <button onClick={exportCSV} style={{ ...inp,background:"#d1fae5",borderColor:"#a7f3d0",color:"#065f46",cursor:"pointer",fontWeight:700 }}>↓ Tải CSV</button>
+              <button onClick={exportCSV} style={{ ...inp,background:"#d1fae5",borderColor:"#a7f3d0",color:"#065f46",cursor:"pointer",fontWeight:700 }}>
+                ↓ CSV
+              </button>
+              <button onClick={exportXLSX} style={{ ...inp,background:"#dbeafe",borderColor:"#93c5fd",color:"#1d4ed8",cursor:"pointer",fontWeight:700 }}>
+                ↓ Excel (.xlsx)
+              </button>
               <span style={{ fontSize:13,color:"#6b7280" }}>{spins.length} bản ghi</span>
             </div>
             <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap" }}>
-              {[["Tổng",spins.length,"#f97316"],["Hợp lệ",spins.filter(s=>s.is_valid).length,"#10b981"],["Không hợp lệ",spins.filter(s=>!s.is_valid).length,"#ef4444"],["Ban",spins.filter(s=>s.shadow_ban_hit).length,"#7c3aed"]].map(([l,v,c])=>(
+              {[["Tổng",spins.length,"#f97316"],["Hợp lệ",spins.filter(s=>s.is_valid).length,"#10b981"],
+                ["Không hợp lệ",spins.filter(s=>!s.is_valid).length,"#ef4444"],
+                ["Ban",spins.filter(s=>s.shadow_ban_hit).length,"#7c3aed"]].map(([l,v,c])=>(
                 <div key={l} style={{ background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,padding:"8px 14px" }}>
                   <div style={{ fontSize:18,fontWeight:900,color:c }}>{v}</div>
                   <div style={{ fontSize:11,color:"#9ca3af" }}>{l}</div>
@@ -791,24 +823,32 @@ function AdminPage({ onBack }) {
             <div style={{ overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb" }}>
               <table style={{ width:"100%",borderCollapse:"collapse" }}>
                 <thead><tr style={{ background:"#f9fafb" }}>
-                  {["Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Status","Thời gian"].map(h=><th key={h} style={th}>{h}</th>)}
+                  {["Mã Bill","SĐT","Cửa hàng","Giải thưởng","Mã Voucher","Trạng thái","Thời gian"].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {loading?<tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Đang tải…</td></tr>
-                  :spins.length===0?<tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Không có dữ liệu</td></tr>
-                  :spins.map(s=>(
+                  {loading ? <tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Đang tải…</td></tr>
+                  : spins.length===0 ? <tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Không có dữ liệu ngày này</td></tr>
+                  : spins.map(s=>(
                     <tr key={s.id} style={{ opacity:s.is_valid?1:.5 }}>
                       <td style={{ ...td,fontFamily:"monospace",color:"#6b7280",fontSize:12 }}>{s.bill_code}</td>
                       <td style={{ ...td,fontSize:12 }}>{s.phone}</td>
-                      <td style={{ ...td,fontSize:12 }}>{s.store_name||"—"}</td>
+                      <td style={{ ...td,fontSize:12,color:"#6b7280" }}>{s.store_name||"—"}</td>
                       <td style={{ ...td,fontWeight:700 }}>{s.prize_name}</td>
-                      <td style={{ ...td,fontFamily:"monospace",fontSize:12,color:"#f97316" }}>{s.voucher_code||"—"}</td>
-                      <td style={td}>
-                        {!s.is_valid?<span style={{ color:"#ef4444",fontSize:12 }}>✗ Hủy</span>
-                        :s.shadow_ban_hit?<span style={{ color:"#7c3aed",fontSize:12 }}>🚫 Ban</span>
-                        :<span style={{ color:"#10b981",fontSize:12 }}>✓</span>}
+                      <td style={{ ...td }}>
+                        {s.voucher_code && s.voucher_code !== "PENDING"
+                          ? <span style={{ fontFamily:"monospace",fontSize:13,background:"#fef3c7",border:"1px solid #f59e0b",borderRadius:6,padding:"2px 8px",color:"#92400e",fontWeight:700 }}>{s.voucher_code}</span>
+                          : s.voucher_code === "PENDING"
+                          ? <span style={{ fontSize:12,color:"#ef4444" }}>⚠ PENDING</span>
+                          : <span style={{ color:"#d1d5db",fontSize:12 }}>—</span>}
                       </td>
-                      <td style={{ ...td,fontSize:12,color:"#9ca3af",whiteSpace:"nowrap" }}>{new Date(s.spun_at).toLocaleString("vi-VN")}</td>
+                      <td style={td}>
+                        {!s.is_valid ? <span style={{ color:"#ef4444",fontSize:12,fontWeight:700 }}>✗ Hủy</span>
+                        : s.shadow_ban_hit ? <span style={{ color:"#7c3aed",fontSize:12 }}>🚫 Ban</span>
+                        : <span style={{ color:"#10b981",fontSize:12 }}>✓ OK</span>}
+                      </td>
+                      <td style={{ ...td,fontSize:12,color:"#9ca3af",whiteSpace:"nowrap" }}>
+                        {new Date(s.spun_at).toLocaleString("vi-VN")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -858,44 +898,99 @@ function AdminPage({ onBack }) {
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
             <div>
               <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>Pool voucher</h3>
+              {vSum.filter(([,s])=>(s.unused||0)<LOW_STOCK&&(s.unused||0)>0).length>0 && (
+                <div style={{ background:"#fffbeb",border:"2px solid #f59e0b",borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:13,color:"#92400e" }}>
+                  ⚠️ <strong>Sắp hết:</strong> {vSum.filter(([,s])=>(s.unused||0)<LOW_STOCK&&(s.unused||0)>0).map(([,s])=>s.name).join(", ")}
+                </div>
+              )}
+              {vSum.filter(([,s])=>(s.unused||0)===0&&((s.assigned||0)+(s.redeemed||0))>0).length>0 && (
+                <div style={{ background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:13,color:"#dc2626" }}>
+                  🚨 <strong>Hết voucher:</strong> {vSum.filter(([,s])=>(s.unused||0)===0&&((s.assigned||0)+(s.redeemed||0))>0).map(([,s])=>s.name).join(", ")}. Nạp ngay!
+                </div>
+              )}
               <div style={{ overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb" }}>
                 <table style={{ width:"100%",borderCollapse:"collapse" }}>
                   <thead><tr style={{ background:"#f9fafb" }}>
-                    {["Giải","Còn","Gán","Dùng","Hủy"].map(h=><th key={h} style={{ ...th,textAlign:h==="Giải"?"left":"right" }}>{h}</th>)}
+                    {["Giải thưởng","Còn lại","Đã cấp","Đã dùng","Đã hủy"].map(h=>(
+                      <th key={h} style={{ ...th,textAlign:h==="Giải thưởng"?"left":"right" }}>{h}</th>
+                    ))}
                   </tr></thead>
                   <tbody>
-                    {vSum.length===0?<tr><td colSpan={5} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Chưa có voucher</td></tr>
-                    :vSum.map(([pid,s])=>(
-                      <tr key={pid}>
-                        <td style={td}>{s.name}</td>
-                        <td style={{ ...td,textAlign:"right",color:"#10b981",fontWeight:700 }}>{s.unused||0}</td>
-                        <td style={{ ...td,textAlign:"right",color:"#f59e0b" }}>{s.assigned||0}</td>
-                        <td style={{ ...td,textAlign:"right",color:"#6b7280" }}>{s.redeemed||0}</td>
-                        <td style={{ ...td,textAlign:"right",color:"#ef4444" }}>{s.voided||0}</td>
-                      </tr>
-                    ))}
+                    {vSum.length===0
+                      ? <tr><td colSpan={5} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Chưa có voucher</td></tr>
+                      : vSum.map(([pid,s])=>{
+                          const unused=s.unused||0;
+                          const isLow=unused<LOW_STOCK&&unused>0;
+                          const isEmpty=unused===0&&((s.assigned||0)+(s.redeemed||0))>0;
+                          return (
+                            <tr key={pid} style={{ background:isEmpty?"#fef2f2":isLow?"#fffbeb":"#fff" }}>
+                              <td style={{ ...td,fontWeight:600 }}>{s.name}</td>
+                              <td style={{ ...td,textAlign:"right" }}>
+                                <span style={{ fontWeight:800,color:isEmpty?"#dc2626":isLow?"#d97706":"#10b981",
+                                  background:isEmpty?"#fef2f2":isLow?"#fffbeb":"#f0fdf4",
+                                  border:`1px solid ${isEmpty?"#fca5a5":isLow?"#fcd34d":"#a7f3d0"}`,
+                                  borderRadius:20,padding:"2px 10px",fontSize:13,display:"inline-block" }}>
+                                  {isEmpty?"🚨 Hết":isLow?`⚠ ${unused}`:unused}
+                                </span>
+                              </td>
+                              <td style={{ ...td,textAlign:"right",color:"#f59e0b",fontWeight:700 }}>{s.assigned||0}</td>
+                              <td style={{ ...td,textAlign:"right",color:"#6b7280" }}>{s.redeemed||0}</td>
+                              <td style={{ ...td,textAlign:"right",color:"#ef4444" }}>{s.voided||0}</td>
+                            </tr>
+                          );
+                        })
+                    }
                   </tbody>
                 </table>
+              </div>
+              <div style={{ fontSize:12,color:"#9ca3af",marginTop:8,lineHeight:1.6 }}>
+                <strong>Còn lại</strong> = chưa cấp · <strong>Đã cấp</strong> = khách trúng chưa đổi · <strong>Đã dùng</strong> = đã đổi tại quầy
               </div>
             </div>
             <div>
               <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>Import voucher</h3>
+              <div style={{ background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#065f46",lineHeight:1.6 }}>
+                💡 Mỗi giải cần pool riêng. Khi khách trúng, hệ thống tự cấp 1 mã và xóa khỏi pool "Còn lại".
+              </div>
               <div style={{ marginBottom:8 }}>
-                <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4 }}>Loại phần thưởng</label>
-                <select value={importPid} onChange={e=>setImportPid(e.target.value)} style={{ ...inp,width:"100%" }}>
-                  <option value="">-- Chọn giải --</option>
-                  {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4 }}>Loại phần thưởng cần nạp</label>
+                <select value={importPid} onChange={e=>setImportPid(e.target.value)}
+                  style={{ ...inp,width:"100%",borderColor:importPid?"#f97316":"#d1d5db",fontWeight:importPid?700:400 }}>
+                  <option value="">-- Chọn giải cần nạp voucher --</option>
+                  {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher&&p.active).map(p=>{
+                    const pool=vSum.find(([pid])=>+pid===p.id);
+                    const unused=pool?(pool[1].unused||0):0;
+                    const warn=unused<LOW_STOCK?(unused===0?"🚨 ":"⚠ "):"";
+                    return <option key={p.id} value={p.id}>{warn}{p.name} (còn: {unused})</option>;
+                  })}
                 </select>
+                {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher&&p.active).length===0&&(
+                  <div style={{ fontSize:12,color:"#ef4444",marginTop:4 }}>Chưa có giải. Vào Cấu hình giải → Load giải mặc định trước.</div>
+                )}
               </div>
               <div style={{ marginBottom:8 }}>
-                <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4 }}>Danh sách mã (mỗi dòng 1 mã)</label>
-                <textarea value={importTxt} onChange={e=>setImportTxt(e.target.value)} rows={6}
-                  style={{ ...inp,width:"100%",resize:"vertical" }} placeholder={"ABC001\nABC002"}/>
+                <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4 }}>
+                  Danh sách mã <span style={{ fontWeight:400,color:"#6b7280" }}>(mỗi mã 1 dòng)</span>
+                </label>
+                <textarea value={importTxt} onChange={e=>setImportTxt(e.target.value)} rows={7}
+                  style={{ ...inp,width:"100%",resize:"vertical",fontFamily:"monospace",fontSize:13 }}
+                  placeholder={"VD001\nVD002\nVD003"}/>
               </div>
-              <button onClick={doImport} style={{ ...inp,background:"#d1fae5",borderColor:"#a7f3d0",color:"#065f46",cursor:"pointer",fontWeight:700,width:"100%" }}>
+              <button onClick={doImport} disabled={!importPid||!importTxt.trim()}
+                style={{ ...inp,
+                  background:importPid&&importTxt.trim()?"#d1fae5":"#f3f4f6",
+                  borderColor:importPid&&importTxt.trim()?"#a7f3d0":"#e5e7eb",
+                  color:importPid&&importTxt.trim()?"#065f46":"#9ca3af",
+                  cursor:importPid&&importTxt.trim()?"pointer":"not-allowed",
+                  fontWeight:700,width:"100%",textAlign:"center",padding:"11px" }}>
                 ↑ Import {importTxt.split(/[\n,]+/).filter(Boolean).length} mã
-              </button>
-              {importMsg && <div style={{ color:"#10b981",fontSize:13,marginTop:8 }}>{importMsg}</div>}
+                {importPid?` → ${prizes.find(p=>p.id===+importPid)?.name||""}`:""}</button>
+              {importMsg&&(
+                <div style={{ color:"#10b981",fontSize:14,marginTop:10,fontWeight:700,
+                  background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px" }}>
+                  {importMsg}
+                </div>
+              )}
             </div>
           </div>
         )}
