@@ -1,11 +1,11 @@
 // supabase.js — SanThai Spin v2
-const URL  = "https://stxymyjwxdtfxkvmsgmz.supabase.co";
+const SUPA_URL = "https://stxymyjwxdtfxkvmsgmz.supabase.co";
 const KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0eHlteWp3eGR0Znhrdm1zZ216Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Nzg4ODIsImV4cCI6MjA5MjQ1NDg4Mn0.dxF-84q5CSoT21b__zq8XgUfyRuSAwIov9PL269WWm4";
 const H    = { apikey:KEY, Authorization:`Bearer ${KEY}`, "Content-Type":"application/json" };
 
 async function rpc(fn, params) {
   try {
-    const r = await fetch(`${URL}/rest/v1/rpc/${fn}`, { method:"POST", headers:H, body:JSON.stringify(params) });
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, { method:"POST", headers:H, body:JSON.stringify(params) });
     if (!r.ok) {
       const t = await r.text();
       if (t.includes("does not exist") || r.status===404)
@@ -18,7 +18,7 @@ async function rpc(fn, params) {
 
 async function get(table, params="") {
   try {
-    const r = await fetch(`${URL}/rest/v1/${table}?${params}`, { headers:H });
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { headers:H });
     if (!r.ok) return [];
     const d = await r.json();
     return Array.isArray(d) ? d : [];
@@ -27,7 +27,7 @@ async function get(table, params="") {
 
 async function post(table, body, prefer="return=minimal") {
   try {
-    const r = await fetch(`${URL}/rest/v1/${table}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
       method:"POST", headers:{...H,Prefer:prefer}, body:JSON.stringify(body)
     });
     return r.ok;
@@ -36,7 +36,7 @@ async function post(table, body, prefer="return=minimal") {
 
 async function patch(table, match, body) {
   try {
-    const r = await fetch(`${URL}/rest/v1/${table}?${match}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${match}`, {
       method:"PATCH", headers:H, body:JSON.stringify(body)
     });
     return r.ok;
@@ -45,7 +45,7 @@ async function patch(table, match, body) {
 
 async function remove(table, match) {
   try {
-    const r = await fetch(`${URL}/rest/v1/${table}?${match}`, { method:"DELETE", headers:H });
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${match}`, { method:"DELETE", headers:H });
     return r.ok;
   } catch { return false; }
 }
@@ -84,13 +84,13 @@ export async function savePrize(prize) {
 
   if (id) {
     // Cập nhật — match theo id, body KHÔNG có id
-    const r = await fetch(`${URL}/rest/v1/spin_prizes?id=eq.${id}`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?id=eq.${id}`, {
       method: "PATCH", headers: H, body: JSON.stringify(data),
     });
     return r.ok;
   } else {
     // Tạo mới
-    const r = await fetch(`${URL}/rest/v1/spin_prizes`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
       method: "POST",
       headers: { ...H, Prefer: "return=representation" },
       body: JSON.stringify(data),
@@ -119,7 +119,7 @@ export async function resetDefaultPrizes() {
     { id:15, name:"Thạch Sương Sáo",     short_name:"S.Sáo",     color:"#1e3a5f", icon:"🍃", probability:15.00, prize_type:"normal",  has_voucher:true,  active:true, display_order:15 },
     { id:16, name:"Thạch Aiyu",          short_name:"Aiyu",      color:"#1e1b4b", icon:"🌸", probability:16.00, prize_type:"normal",  has_voucher:true,  active:true, display_order:16 },
   ];
-  const r = await fetch(`${URL}/rest/v1/spin_prizes`, {
+  const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
     method: "POST",
     headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(defaults),
@@ -173,7 +173,7 @@ export async function adminInvalidate(bills) {
 export async function importVouchers(codes, prizeId, prizeName) {
   const rows = codes.map(c => ({ prize_id:prizeId, prize_name:prizeName, code:c.trim(), status:"unused" }));
   for (let i=0; i<rows.length; i+=100) {
-    await fetch(`${URL}/rest/v1/spin_vouchers`, {
+    await fetch(`${SUPA_URL}/rest/v1/spin_vouchers`, {
       method:"POST",
       headers:{...H, Prefer:"resolution=ignore-duplicates"},
       body:JSON.stringify(rows.slice(i,i+100)),
