@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import * as XLSX from "xlsx";
 import {
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
   loadStoreStats, loadStores,
@@ -603,22 +602,28 @@ function AdminPage({ onBack }) {
   };
 
   const exportXLSX = () => {
-    const data = spins.map(s => ({
-      "Mã Bill":     s.bill_code,
-      "SĐT":         s.phone,
-      "Cửa hàng":    s.store_name || "",
-      "Giải thưởng": s.prize_name,
-      "Mã Voucher":  s.voucher_code || "",
-      "Hợp lệ":      s.is_valid ? "Có" : "Không",
-      "Shadow Ban":  s.shadow_ban_hit ? "Có" : "Không",
-      "Thời gian":   new Date(s.spun_at).toLocaleString("vi-VN"),
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    // Column widths
-    ws["!cols"] = [16,14,20,22,16,8,10,22].map(w=>({wch:w}));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Lịch sử quay");
-    XLSX.writeFile(wb, `santhai_spins_${date}.xlsx`);
+    // HTML table → Excel (không cần npm package, Excel đọc được bình thường)
+    const H2 = ["Mã Bill","SĐT","Cửa hàng","Giải thưởng","Mã Voucher","Hợp lệ","Shadow Ban","Thời gian"];
+    const rows = spins.map(s=>[
+      s.bill_code, s.phone, s.store_name||"", s.prize_name,
+      s.voucher_code||"", s.is_valid?"Có":"Không",
+      s.shadow_ban_hit?"Có":"Không",
+      new Date(s.spun_at).toLocaleString("vi-VN"),
+    ]);
+    const headerRow = `<tr>${H2.map(h=>`<th style="background:#f97316;color:#fff;font-weight:bold">${h}</th>`).join("")}</tr>`;
+    const dataRows  = rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("");
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="UTF-8">
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
+      <x:ExcelWorksheet><x:Name>Lịch sử quay</x:Name>
+      <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+      </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+      </head><body><table>${headerRow}${dataRows}</table></body></html>`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\uFEFF"+html],{type:"application/vnd.ms-excel;charset=utf-8"}));
+    a.download = `santhai_spins_${date}.xls`;
+    a.click();
   };
 
   const applyInvalid = async () => {
