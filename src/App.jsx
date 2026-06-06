@@ -4,6 +4,7 @@ import {
   loadStoreStats, loadStores,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
+  loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
 } from "./supabase.js";
 
 const ADMIN_PWD   = "Santhai2024";
@@ -488,6 +489,278 @@ function CustomerPage({ onAdmin }) {
   );
 }
 
+/* ─── GENERATE TEST VOUCHERS EXCEL ─── */
+function genTestVoucherXLS(prizes) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const mkCode = () => Array.from({length:8},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
+  const rows = [];
+  prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher&&p.active).forEach(p=>{
+    for (let i=0;i<10;i++) rows.push({ prize:p.name, code:mkCode(), prizeId:p.id });
+  });
+  const hdr = `<tr><th style="background:#f97316;color:#fff;font-weight:bold">Giải thưởng</th><th style="background:#f97316;color:#fff;font-weight:bold">Mã Voucher (test)</th><th style="background:#f97316;color:#fff;font-weight:bold">Prize ID</th></tr>`;
+  const body = rows.map(r=>`<tr><td>${r.prize}</td><td style="font-family:monospace;font-weight:bold">${r.code}</td><td>${r.prizeId}</td></tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Test Vouchers</x:Name></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+    <body><table>${hdr}${body}</table></body></html>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\uFEFF"+html],{type:"application/vnd.ms-excel;charset=utf-8"}));
+  a.download = "santhai_test_vouchers.xls"; a.click();
+  return rows; // trả về để admin có thể import thẳng
+}
+
+/* ─── TEST MODE PANEL ─── */
+// Tạo sequence 30 lần, cover đủ tất cả prizes
+function buildTestSequence(prizes) {
+  if (!prizes.length) return [];
+  const seq = [...prizes]; // mỗi giải ít nhất 1 lần
+  while (seq.length < 30) {
+    seq.push(prizes[Math.floor(Math.random()*prizes.length)]);
+  }
+  // Fisher-Yates shuffle để ngẫu nhiên
+  for (let i=seq.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [seq[i],seq[j]]=[seq[j],seq[i]];
+  }
+  return seq.slice(0,30);
+}
+
+function TestModePanel({ prizes, allPrizes }) {
+  const [seq,    setSeq]    = useState([]);
+  const [idx,    setIdx]    = useState(-1);
+  const [done,   setDone]   = useState(false);
+  const [preview,setPreview]= useState(null); // preview 1 giải cụ thể
+
+  const start = () => {
+    const s = buildTestSequence(allPrizes.filter(p=>p.active));
+    setSeq(s); setIdx(0); setDone(false);
+  };
+
+  const next = () => {
+    if (idx < seq.length-1) setIdx(i=>i+1);
+    else setDone(true);
+  };
+
+  const cur = seq[idx];
+  const covered = new Set(seq.slice(0,Math.max(0,idx+1)).map(p=>p.id));
+  const missing = allPrizes.filter(p=>p.active&&!covered.has(p.id));
+
+  const inp = {border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:14,color:"#1c1917",background:"#fff"};
+
+  return (
+    <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+      {/* Left: Sequence runner */}
+      <div>
+        <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>🎰 30-lượt test — cover toàn bộ giải</h3>
+        <div style={{ background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#065f46",lineHeight:1.6 }}>
+          Sequence 30 lượt tự động cover đủ tất cả {allPrizes.filter(p=>p.active).length} giải active, sau đó shuffle ngẫu nhiên. Không ghi vào DB.
+        </div>
+
+        {idx<0 && !done && (
+          <button onClick={start} style={{ width:"100%",padding:"13px",background:"linear-gradient(135deg,#7c3aed,#6d28d9)",border:"none",borderRadius:12,color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",marginBottom:12 }}>
+            ▶ Bắt đầu test 30 lượt
+          </button>
+        )}
+
+        {idx>=0 && !done && cur && (
+          <div style={{ background:"#fff",border:"2px solid #7c3aed",borderRadius:14,padding:20,textAlign:"center" }}>
+            <div style={{ fontSize:11,fontWeight:700,color:"#7c3aed",letterSpacing:1,marginBottom:4 }}>LƯỢT {idx+1}/30</div>
+            <div style={{ fontSize:56,marginBottom:8 }}>{cur.icon}</div>
+            <div style={{ fontSize:22,fontWeight:900,color:"#1c1917",marginBottom:4 }}>{cur.name}</div>
+            <div style={{ fontSize:12,color:"#6b7280",marginBottom:14 }}>
+              Loại: <strong>{cur.prize_type}</strong> ·
+              {cur.prize_type==="normal"&&cur.has_voucher ? " Sẽ cấp voucher" : cur.prize_type==="special" ? " Liên hệ SĐT" : " Mất lượt"}
+            </div>
+            {cur.prize_type==="normal"&&cur.has_voucher && (
+              <div style={{ background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:10,padding:10,marginBottom:14,fontFamily:"monospace",fontWeight:900,fontSize:18,color:"#92400e",letterSpacing:3 }}>
+                TEST-{String(idx+1).padStart(3,"0")}
+              </div>
+            )}
+            {cur.prize_type==="special" && (
+              <div style={{ background:"#fef2f2",border:"2px solid #ef4444",borderRadius:10,padding:10,marginBottom:14,fontSize:13,color:"#dc2626" }}>
+                Nhân viên sẽ gọi số: <strong>0901234567</strong>
+              </div>
+            )}
+            <button onClick={next} style={{ padding:"11px 30px",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:10,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer" }}>
+              {idx<seq.length-1?"Lượt tiếp →":"✅ Kết thúc"}
+            </button>
+          </div>
+        )}
+
+        {done && (
+          <div style={{ background:"#f0fdf4",border:"2px solid #10b981",borderRadius:14,padding:20,textAlign:"center" }}>
+            <div style={{ fontSize:40,marginBottom:8 }}>🎉</div>
+            <div style={{ fontSize:20,fontWeight:900,color:"#065f46",marginBottom:4 }}>Test hoàn thành!</div>
+            <div style={{ fontSize:14,color:"#6b7280",marginBottom:14 }}>30/30 lượt · Đã cover {allPrizes.filter(p=>p.active).length} giải</div>
+            <button onClick={()=>{setIdx(-1);setDone(false);setSeq([]);}} style={{ padding:"10px 24px",background:"#f3f4f6",border:"none",borderRadius:10,color:"#374151",fontWeight:700,cursor:"pointer" }}>
+              Reset
+            </button>
+          </div>
+        )}
+
+        {idx>=0 && !done && (
+          <div style={{ marginTop:12,fontSize:12,color:"#9ca3af" }}>
+            {missing.length>0 ? `⏳ Chưa cover: ${missing.map(p=>p.short_name||p.name).join(", ")}` : "✅ Đã cover tất cả giải!"}
+          </div>
+        )}
+      </div>
+
+      {/* Right: Preview từng giải */}
+      <div>
+        <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>👁 Preview từng giải</h3>
+        <div style={{ fontSize:13,color:"#6b7280",marginBottom:10 }}>Click vào bất kỳ giải nào để xem màn hình kết quả sẽ hiển thị như thế nào.</div>
+        <div style={{ display:"flex",flexDirection:"column",gap:6,maxHeight:400,overflowY:"auto" }}>
+          {allPrizes.filter(p=>p.active).map(p=>(
+            <button key={p.id} onClick={()=>setPreview(p)}
+              style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,cursor:"pointer",textAlign:"left",
+                borderColor:preview?.id===p.id?"#f97316":"#e5e7eb",
+                background:preview?.id===p.id?"#fff7ed":"#fff" }}>
+              <span style={{ fontSize:22 }}>{p.icon}</span>
+              <div>
+                <div style={{ fontWeight:700,fontSize:14 }}>{p.name}</div>
+                <div style={{ fontSize:11,color:"#9ca3af" }}>{p.prize_type} · {p.probability}%</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        {preview && (
+          <div style={{ marginTop:12,background:"#fff",border:"2px solid #f97316",borderRadius:14,padding:16,textAlign:"center" }}>
+            <div style={{ fontSize:11,color:"#92400e",fontWeight:700,marginBottom:4 }}>PREVIEW — {preview.name}</div>
+            <div style={{ fontSize:48,marginBottom:6 }}>{preview.icon}</div>
+            <div style={{ fontSize:18,fontWeight:900 }}>{preview.name}</div>
+            {preview.prize_type==="normal"&&preview.has_voucher&&<div style={{ margin:"10px 0",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:8,padding:8,fontFamily:"monospace",fontWeight:900,fontSize:16,letterSpacing:3,color:"#92400e" }}>ABCD1234</div>}
+            {preview.prize_type==="special"&&<div style={{ margin:"10px 0",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:8,fontSize:13,color:"#dc2626" }}>Nhân viên sẽ liên hệ qua SĐT</div>}
+            {preview.prize_type==="viral"&&<div style={{ margin:"10px 0",fontSize:13,color:"#ef4444",fontWeight:700 }}>😅 Mất lượt — nhận 1 topping tự chọn</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── VOUCHER DETAIL PANEL ─── */
+function VoucherDetailPanel({ prizes }) {
+  const [selPrize, setSelPrize] = useState("");
+  const [vouchers, setVouchers] = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [filterSt, setFilterSt] = useState("all");
+  const [msg,      setMsg]      = useState("");
+
+  const loadVouchers = async () => {
+    if (!selPrize) return;
+    setLoading(true);
+    const data = await loadPrizeVouchers(+selPrize, filterSt==="all"?null:filterSt);
+    setVouchers(Array.isArray(data)?data:[]); setSelected(new Set());
+    setLoading(false);
+  };
+
+  useEffect(() => { loadVouchers(); }, [selPrize, filterSt]);
+
+  const handleDelete = async (id) => {
+    if (!confirm("Xóa voucher này?")) return;
+    await deleteVoucher(id); loadVouchers();
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size===0 || !confirm(`Xóa ${selected.size} voucher?`)) return;
+    await bulkDeleteVouchers([...selected]);
+    setMsg(`✅ Đã xóa ${selected.size} voucher`);
+    setTimeout(()=>setMsg(""),3000);
+    loadVouchers();
+  };
+
+  const inp = {border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:14,color:"#1c1917",background:"#fff"};
+  const th  = {padding:"8px 12px",textAlign:"left",fontSize:12,fontWeight:700,color:"#6b7280",borderBottom:"1px solid #e5e7eb",whiteSpace:"nowrap"};
+  const td  = {padding:"8px 12px",borderBottom:"1px solid #f3f4f6",fontSize:13,verticalAlign:"middle"};
+  const STATUS_COLOR = {unused:"#10b981",assigned:"#f59e0b",redeemed:"#6b7280",voided:"#ef4444"};
+  const STATUS_LABEL = {unused:"Chưa cấp",assigned:"Đã cấp",redeemed:"Đã dùng",voided:"Đã hủy"};
+
+  const displayed = filterSt==="all" ? vouchers : vouchers.filter(v=>v.status===filterSt);
+
+  return (
+    <div>
+      <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>🔍 Quản lý voucher chi tiết</h3>
+      <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap" }}>
+        <select value={selPrize} onChange={e=>setSelPrize(e.target.value)} style={{ ...inp,minWidth:200 }}>
+          <option value="">-- Chọn giải --</option>
+          {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher).map(p=>(
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        <select value={filterSt} onChange={e=>setFilterSt(e.target.value)} style={inp}>
+          <option value="all">Tất cả</option>
+          <option value="unused">Chưa cấp</option>
+          <option value="assigned">Đã cấp</option>
+          <option value="redeemed">Đã dùng</option>
+          <option value="voided">Đã hủy</option>
+        </select>
+        {selected.size>0 && (
+          <button onClick={handleBulkDelete} style={{ ...inp,background:"#fef2f2",borderColor:"#fca5a5",color:"#dc2626",cursor:"pointer",fontWeight:700 }}>
+            🗑 Xóa {selected.size} mã đã chọn
+          </button>
+        )}
+        {displayed.filter(v=>v.status==="unused").length>0 && (
+          <button onClick={async()=>{
+            const unusedIds = displayed.filter(v=>v.status==="unused").map(v=>v.id);
+            if(!confirm(`Xóa toàn bộ ${unusedIds.length} voucher CHƯA CẤP?`)) return;
+            await bulkDeleteVouchers(unusedIds);
+            setMsg(`✅ Đã xóa ${unusedIds.length} voucher test`);
+            setTimeout(()=>setMsg(""),3000);
+            loadVouchers();
+          }} style={{ ...inp,background:"#fef2f2",borderColor:"#fca5a5",color:"#dc2626",cursor:"pointer",fontWeight:700 }}>
+            🗑 Xóa toàn bộ chưa cấp ({displayed.filter(v=>v.status==="unused").length})
+          </button>
+        )}
+      </div>
+      {msg && <div style={{ color:"#10b981",fontWeight:700,fontSize:14,marginBottom:10,background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px" }}>{msg}</div>}
+      {!selPrize ? (
+        <div style={{ padding:24,textAlign:"center",color:"#9ca3af",border:"2px dashed #e5e7eb",borderRadius:12 }}>Chọn giải thưởng để xem danh sách voucher</div>
+      ) : loading ? (
+        <div style={{ padding:24,textAlign:"center",color:"#9ca3af" }}>Đang tải…</div>
+      ) : (
+        <div style={{ overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb" }}>
+          <table style={{ width:"100%",borderCollapse:"collapse" }}>
+            <thead><tr style={{ background:"#f9fafb" }}>
+              <th style={{ ...th,width:36 }}><input type="checkbox" onChange={e=>{
+                if(e.target.checked) setSelected(new Set(displayed.map(v=>v.id)));
+                else setSelected(new Set());
+              }} checked={selected.size===displayed.length&&displayed.length>0}/></th>
+              {["Mã Voucher","Trạng thái","Bill","SĐT nhận","Thời gian tạo"].map(h=><th key={h} style={th}>{h}</th>)}
+              <th style={th}></th>
+            </tr></thead>
+            <tbody>
+              {displayed.length===0 ? (
+                <tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Không có voucher</td></tr>
+              ) : displayed.map(v=>(
+                <tr key={v.id}>
+                  <td style={td}><input type="checkbox" checked={selected.has(v.id)} onChange={e=>{
+                    const ns=new Set(selected); e.target.checked?ns.add(v.id):ns.delete(v.id); setSelected(ns);
+                  }}/></td>
+                  <td style={{ ...td,fontFamily:"monospace",fontWeight:700,fontSize:14 }}>{v.code}</td>
+                  <td style={td}>
+                    <span style={{ background:`${STATUS_COLOR[v.status]}20`,color:STATUS_COLOR[v.status],border:`1px solid ${STATUS_COLOR[v.status]}44`,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700 }}>
+                      {STATUS_LABEL[v.status]||v.status}
+                    </span>
+                  </td>
+                  <td style={{ ...td,fontFamily:"monospace",fontSize:12,color:"#6b7280" }}>{v.assigned_bill||"—"}</td>
+                  <td style={{ ...td,fontSize:12,color:"#6b7280" }}>{v.assigned_phone||"—"}</td>
+                  <td style={{ ...td,fontSize:12,color:"#9ca3af" }}>{v.created_at?new Date(v.created_at).toLocaleDateString("vi-VN"):"—"}</td>
+                  <td style={td}>
+                    {v.status==="unused" && (
+                      <button onClick={()=>handleDelete(v.id)} style={{ padding:"3px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:12 }}>🗑</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ padding:"8px 12px",fontSize:12,color:"#9ca3af" }}>{displayed.length} voucher</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── ADMIN PAGE ─── */
 const ADMIN_TOKEN = typeof btoa !== "undefined" ? btoa(ADMIN_PWD + "_st26") : "";
 
@@ -669,7 +942,16 @@ function AdminPage({ onBack }) {
     </div>
   );
 
-  const TABS=[{id:"prizes",label:"🎁 Cấu hình giải"},{id:"spins",label:"📋 Lịch sử"},{id:"reconcile",label:"🔍 Đối chiếu"},{id:"vouchers",label:"🎟 Vouchers"},{id:"special",label:"🏆 Giải đặc biệt"},{id:"blacklist",label:"🚫 Blacklist"}];
+  const TABS=[
+    {id:"prizes",   label:"🎁 Cấu hình giải"},
+    {id:"spins",    label:"📋 Lịch sử"},
+    {id:"reconcile",label:"🔍 Đối chiếu"},
+    {id:"vouchers", label:"🎟 Vouchers"},
+    {id:"vdetail",  label:"🔧 Chi tiết voucher"},
+    {id:"test",     label:"🧪 Test Mode"},
+    {id:"special",  label:"🏆 Giải đặc biệt"},
+    {id:"blacklist",label:"🚫 Blacklist"},
+  ];
 
   return (
     <div style={{ minHeight:"100vh",background:"#f9fafb",fontFamily:"Nunito,sans-serif" }}>
@@ -997,6 +1279,32 @@ function AdminPage({ onBack }) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── VOUCHER CHI TIẾT ── */}
+        {tab==="vdetail" && <VoucherDetailPanel prizes={prizes}/>}
+
+        {/* ── TEST MODE ── */}
+        {tab==="test" && (
+          <div>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
+              <div>
+                <h3 style={{ fontSize:16,fontWeight:900,marginBottom:4 }}>🧪 Test Mode</h3>
+                <div style={{ fontSize:13,color:"#6b7280" }}>Không ghi vào DB. Dùng để kiểm tra hiển thị trước khi event.</div>
+              </div>
+              <button onClick={()=>{
+                if(prizes.filter(p=>p.active).length===0){alert("Cần load giải mặc định trước!"); return;}
+                genTestVoucherXLS(prizes);
+              }}
+                style={{ padding:"10px 18px",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer" }}>
+                📥 Xuất {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher&&p.active).length * 10} mã test (.xls)
+              </button>
+            </div>
+            <div style={{ background:"#fffbeb",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#92400e",lineHeight:1.6 }}>
+              ⚡ <strong>Quy trình test:</strong> Xuất mã test → Import vào từng giải (tab Vouchers) → Chạy 30-lượt test bên dưới → Sau khi test xong, vào <strong>Chi tiết voucher</strong> → Chọn từng giải → Xóa toàn bộ mã chưa cấp.
+            </div>
+            <TestModePanel prizes={prizes} allPrizes={prizes}/>
           </div>
         )}
 
