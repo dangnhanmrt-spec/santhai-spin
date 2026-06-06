@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder,
+  doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes,
   loadStoreStats, loadStores,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
@@ -539,10 +539,20 @@ function AdminPage({ onBack }) {
 
   // Prize CRUD
   const handleSavePrize = async () => {
-    if (!editPrize?.name || !editPrize?.probability) return;
-    await savePrize(editPrize);
-    setPrizeMsg("✅ Đã lưu"); setEditPrize(null); loadAll();
-    setTimeout(() => setPrizeMsg(""), 3000);
+    const name = editPrize?.name?.trim();
+    const prob = parseFloat(editPrize?.probability);
+    if (!name)              return setPrizeMsg("❌ Cần nhập tên giải thưởng");
+    if (isNaN(prob) || prob < 0) return setPrizeMsg("❌ Xác suất không hợp lệ");
+    setPrizeMsg("⏳ Đang lưu…");
+    const ok = await savePrize(editPrize);
+    if (ok) {
+      setPrizeMsg("✅ Đã lưu thành công!");
+      setEditPrize(null);
+      loadAll();
+    } else {
+      setPrizeMsg("❌ Lỗi khi lưu. Kiểm tra Supabase hoặc chạy lại schema_v2.sql");
+    }
+    setTimeout(() => setPrizeMsg(""), 4000);
   };
   const handleDeletePrize = async (id) => {
     if (!confirm("Xóa giải thưởng này?")) return;
@@ -633,10 +643,16 @@ function AdminPage({ onBack }) {
                 Tổng xác suất: <span style={{ color:Math.abs(totalProb-100)<0.01?"#10b981":"#ef4444",fontSize:16 }}>{totalProb.toFixed(2)}%</span>
                 {Math.abs(totalProb-100)<0.01 ? " ✅" : " ⚠️ Phải đúng 100%"}
               </div>
-              <button onClick={()=>setEditPrize({ name:"",short_name:"",color:"#f59e0b",icon:"🎁",probability:0,prize_type:"normal",has_voucher:true,active:true,display_order:prizes.length+1 })}
-                style={{ padding:"8px 16px",background:"linear-gradient(135deg,#10b981,#059669)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}>
-                + Thêm giải thưởng
-              </button>
+              <div style={{ display:"flex",gap:8 }}>
+                <button onClick={async()=>{ if(!confirm("Load lại 16 giải mặc định? Sẽ ghi đè giải hiện có.")) return; const ok=await resetDefaultPrizes(); setPrizeMsg(ok?"✅ Đã load giải mặc định":"❌ Lỗi"); loadAll(); setTimeout(()=>setPrizeMsg(""),3000); }}
+                  style={{ padding:"8px 14px",background:"#f0fdf4",border:"2px solid #a7f3d0",borderRadius:10,color:"#065f46",fontSize:13,fontWeight:700,cursor:"pointer" }}>
+                  🔄 Load giải mặc định
+                </button>
+                <button onClick={()=>setEditPrize({ name:"",short_name:"",color:"#f59e0b",icon:"🎁",probability:0,prize_type:"normal",has_voucher:true,active:true,display_order:prizes.length+1 })}
+                  style={{ padding:"8px 16px",background:"linear-gradient(135deg,#10b981,#059669)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}>
+                  + Thêm giải thưởng
+                </button>
+              </div>
             </div>
 
             {prizeMsg && <div style={{ color:"#10b981",fontSize:14,marginBottom:10 }}>{prizeMsg}</div>}
