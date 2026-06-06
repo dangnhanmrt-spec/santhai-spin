@@ -74,30 +74,48 @@ export async function loadAllPrizes() {
 }
 
 export async function savePrize(prize) {
-  // Tách id và created_at ra, không gửi vào body
   const { id, created_at, ...data } = prize;
-  // Ép kiểu đúng — input luôn trả string
   data.probability   = parseFloat(data.probability)   || 0;
   data.display_order = parseInt(data.display_order)   || 0;
   data.has_voucher   = Boolean(data.has_voucher);
   data.active        = Boolean(data.active);
 
-  if (id) {
-    // Cập nhật — match theo id, body KHÔNG có id
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?id=eq.${id}`, {
-      method: "PATCH", headers: H, body: JSON.stringify(data),
-    });
-    return r.ok;
-  } else {
-    // Tạo mới
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
-      method: "POST",
-      headers: { ...H, Prefer: "return=representation" },
-      body: JSON.stringify(data),
-    });
-    return r.ok;
+  try {
+    let r;
+    if (id) {
+      r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?id=eq.${id}`, {
+        method: "PATCH", headers: H, body: JSON.stringify(data),
+      });
+    } else {
+      r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
+        method: "POST",
+        headers: { ...H, Prefer: "return=representation" },
+        body: JSON.stringify(data),
+      });
+    }
+    if (!r.ok) {
+      const txt = await r.text();
+      if (txt.includes("does not exist") || r.status === 404)
+        return { ok: false, error: "Bảng spin_prizes chưa tồn tại. Chạy schema_v2.sql trong Supabase!" };
+      return { ok: false, error: `Lỗi HTTP ${r.status}: ${txt.slice(0,100)}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: "Không kết nối được Supabase: " + e.message };
   }
 }
+
+
+// Kiểm tra bảng spin_prizes đã tồn tại chưa
+export async function testConnection() {
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?limit=1`, { headers: H });
+    if (r.status === 404 || r.status === 400) return { ok: false, error: "table_missing" };
+    if (!r.ok) return { ok: false, error: `http_${r.status}` };
+    return { ok: true };
+  } catch { return { ok: false, error: "network" }; }
+}
+
 
 // Reset về 16 giải mặc định
 export async function resetDefaultPrizes() {
