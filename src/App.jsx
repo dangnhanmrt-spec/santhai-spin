@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
-  loadStoreStats, loadStores,
+  loadStoreStats,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
   loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
@@ -9,6 +9,54 @@ import {
 
 const ADMIN_PWD   = "Santhai2024";
 const LOW_STOCK   = 10; // cảnh báo khi số voucher còn lại < 10
+
+/* ─── STORE MAP — Auto-detect từ bill code ─── */
+// Source: accounting_sale.xlsx — 75 stores, sorted by prefix length DESC
+const STORE_PREFIXES = [
+  ["SR.NTT","SanThai - KG1 - Rạch Giá 1"],["SANTHAI","Santhai - Thới Lai"],
+  ["SXVNT","SanThai - CT5 - XVNT"],["STNOT","SanThai - CT9 - Thốt Nốt"],
+  ["SHVTA","SanThai - LA1 - Tân An"],["STPBL","SanThai - BL2 - Trần Phú"],
+  ["SBTRE","SanThai - BT1 - Bến Tre"],["CAUKE","Santhai - Cầu Kè"],
+  ["BATRI","Santhai - Ba Tri"],["THDLX","SanThai - AG1 - THĐ1"],
+  ["SMT10","SanThai - CT1 - Mậu Thân"],["SMT15","SanThai - TG1 - Lê Đại Hành"],
+  ["S.TNV","SanThai - VL3 - Trưng Vương"],["263AA","SanThai - CT6 - NVC2"],
+  ["STCL","SanThai - Càng Long"],["DTMT","SanThai - Mỹ Thọ"],
+  ["DTHH","SanThai - Đinh Tiên Hoàng"],["GCTG","Santhai - Gò Công"],
+  ["TVVL","Santhai - Trà Vinh"],["THKG","Santhai - Tân Hiệp, Kiên Giang"],
+  ["TOVL","Santhai - Trà Ôn, Vĩnh Long"],["TBVL","SanThai - VL5 - Tam Bình"],
+  ["SNVL","SanThai - CT7 - NVL"],["STML","SanThai - KG3 - Minh Lương"],
+  ["SMT2","SanThai - TG2 - Ấp Bắc"],["SDH2","SanThai - LA4 - Đức Hòa 2"],
+  ["SLX4","SanThai - AG4 - THĐ2"],["SLX5","SanThai - AG5 - Phú Hòa"],
+  ["SCD2","Santhai - Cờ Đỏ 2"],["S.GR","SanThai - BL1 - Giá Rai"],
+  ["S.TC","SanThai - AG6 - Tân Châu"],["S.OM","SanThai - CT10 - Ô Môn"],
+  ["S.CD","SanThai - LA3 - Cần Đước"],["NGA5","Santhai - Ngã 5"],
+  ["SMT","SanThai - CT1 - Mậu Thân"],["SDH","SanThai - LA2 - Đức Hòa"],
+  ["SLX","SanThai - AG4 - THĐ2"],["SCD","SanThai - AG9 - Châu Đốc"],
+  ["SCM","SanThai - Chợ Mới / Cà Mau"],["SCT","Santhai - Cái Tắc"],
+  ["S3T","SanThai - CT3 - Ba Tháng Hai"],["S30","SanThai - ST1 - 30 Tháng"],
+  ["SAB","SanThai - KG5 - An Biên"],["SAC","SanThai - AG7 - An Châu"],
+  ["SBD","Santhai - Bình Đại"],["SBT","SanThai - VL2 - Bình Tâm"],
+  ["SCC","Santhai - Cái Côn"],["SCL","SanThai - ĐT3 - Cao Lãnh"],
+  ["SGR","SanThai - KG4 - Giồng Riềng"],["SHG","SanThai - HG1 - Ngã Bảy"],
+  ["SLH","SanThai - VL4 - Long Hồ"],["SLV","Santhai - Lai Vung"],
+  ["SML","SanThai - ĐT8 - Mỹ Long"],["SND","SanThai - CT2 - NVC1"],
+  ["SPD","SanThai - CT12 - Phong Điền"],["SPH","SanThai - CT8 - Phạm Hùng"],
+  ["SPL","SanThai - BL3 - Phước Long"],["SRG","SanThai - KG2 - Rạch Giá 2"],
+  ["SSD","SanThai - ĐT1 - Sa Đéc"],["STB","SanThai - ĐT7 - Thanh Bình"],
+  ["STC","Santhai - Tiểu Cần"],["STM","SanThai - ĐT6 - Tháp Mười"],
+  ["SVT","Santhai - Vị Thanh"],["RG3","SanThai - Rạch Giá 3"],
+  ["LVO","Santhai - Lấp Vò"],["BM","SanThai - VL1 - Bình Minh"],
+  ["ML","Santhai - Mỹ Luông"],["RG","SanThai - Rạch Giá 3"],
+  ["CD","Santhai - Cần Đăng / Cái Dầu"],["S","Santhai - Bến Lức"],
+];
+
+function detectStore(billCode) {
+  const code = billCode.trim().toUpperCase().replace(/\u200b/g,"");
+  for (const [prefix, name] of STORE_PREFIXES) {
+    if (code.startsWith(prefix.toUpperCase())) return { id:prefix, name };
+  }
+  return { id:"", name:"" };
+}
 
 /* ─── GLOBAL STYLES ─── */
 const G = `
@@ -244,15 +292,13 @@ function ResultModal({ result, phone, onClose }) {
 /* ─── MAIN CUSTOMER PAGE ─── */
 function CustomerPage({ onAdmin }) {
   const [prizes,   setPrizes]   = useState([]);
-  const [stores,   setStores]   = useState([]);
   const [stats,    setStats]    = useState([]);
-  const [storeId,  setStoreId]  = useState("");
-  const [storeName,setStoreName]= useState("");
   const [bill,     setBill]     = useState("");
   const [phone,    setPhone]    = useState("");
+  const [detectedStore, setDetectedStore] = useState({ id:"", name:"" });
   const [err,      setErr]      = useState("");
   const [loading,  setLoading]  = useState(false);
-  const [spins,    setSpins]    = useState(0);    // lượt quay đang có
+  const [spins,    setSpins]    = useState(0);
   const [pendingResult, setPendingResult] = useState(null);
   const [spinning, setSpinning] = useState(false);
   const [showResult, setShowResult] = useState(null);
@@ -260,11 +306,18 @@ function CustomerPage({ onAdmin }) {
 
   useEffect(() => {
     loadActivePrizes().then(setPrizes);
-    loadStores().then(s => setStores(Array.isArray(s) ? s : []));
     loadStoreStats().then(setStats);
     const t = setInterval(() => loadStoreStats().then(setStats), 60000);
     return () => clearInterval(t);
   }, []);
+
+  // Auto-detect store khi bill thay đổi
+  const handleBillChange = (val) => {
+    const upper = val.toUpperCase();
+    setBill(upper);
+    if (upper.length >= 2) setDetectedStore(detectStore(upper));
+    else setDetectedStore({ id:"", name:"" });
+  };
 
   const handleGetSpin = async () => {
     const b = bill.trim().toUpperCase();
@@ -272,7 +325,8 @@ function CustomerPage({ onAdmin }) {
     if (!b || b.length < 4) return setErr("Vui lòng nhập mã bill hợp lệ.");
     if (p.length < 9 || p.length > 11) return setErr("Số điện thoại không hợp lệ.");
     setLoading(true); setErr("");
-    const res = await doSpin(b, p, storeId || null, storeName || null);
+    const store = detectStore(b);
+    const res = await doSpin(b, p, store.id || null, store.name || null);
     setLoading(false);
     if (!res || res.error === "network") return setErr("Không kết nối được. Kiểm tra mạng.");
     if (res.error === "bill_used")       return setErr("Mã bill này đã được sử dụng rồi.");
@@ -328,34 +382,24 @@ function CustomerPage({ onAdmin }) {
             ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
 
-          {/* Store selector */}
-          <div>
-            <label style={{ display:"block", fontSize:14, fontWeight:700, color:"#44403c", marginBottom:8 }}>
-              🏪 Cửa hàng của bạn
-            </label>
-            {stores.length > 0 ? (
-              <select value={storeId} onChange={e => { setStoreId(e.target.value); setStoreName(e.target.options[e.target.selectedIndex]?.text || ""); }}
-                style={{ width:"100%", padding:"12px 14px", border:"2px solid #fed7aa", borderRadius:12, fontSize:15, color:"#1c1917", background:"#fff" }}>
-                <option value="">-- Chọn cửa hàng --</option>
-                {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            ) : (
-              <input value={storeName} onChange={e => setStoreName(e.target.value)}
-                placeholder="Nhập tên cửa hàng"
-                style={{ width:"100%", padding:"12px 14px", border:"2px solid #fed7aa", borderRadius:12, fontSize:15, color:"#1c1917" }}/>
-            )}
-          </div>
-
-          {/* Bill code */}
+          {/* Bill code — store auto-detected from prefix */}
           <div>
             <label style={{ display:"block", fontSize:14, fontWeight:700, color:"#44403c", marginBottom:8 }}>
               🧾 Mã bill (in trên hóa đơn)
             </label>
-            <input value={bill} onChange={e => setBill(e.target.value.toUpperCase())}
+            <input value={bill} onChange={e => handleBillChange(e.target.value)}
               onKeyDown={e => e.key==="Enter" && handleGetSpin()}
-              placeholder="VD: HD20250601001" maxLength={30} disabled={loading}
+              placeholder="VD: SXVNT212106" maxLength={30} disabled={loading}
               autoCapitalize="characters"
-              style={{ width:"100%", padding:"13px 16px", border:"2px solid #fed7aa", borderRadius:12, fontSize:16, fontWeight:700, letterSpacing:1, color:"#1c1917" }}/>
+              style={{ width:"100%", padding:"13px 16px", border:`2px solid ${detectedStore.name?"#10b981":"#fed7aa"}`, borderRadius:12, fontSize:16, fontWeight:700, letterSpacing:1, color:"#1c1917" }}/>
+            {detectedStore.name ? (
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:5 }}>
+                <span style={{ fontSize:15 }}>🏪</span>
+                <span style={{ fontSize:13, color:"#059669", fontWeight:700 }}>{detectedStore.name}</span>
+              </div>
+            ) : bill.length >= 2 ? (
+              <div style={{ fontSize:12, color:"#f59e0b", marginTop:4 }}>⚠ Không nhận ra mã cửa hàng — vẫn có thể quay</div>
+            ) : null}
           </div>
 
           {/* Phone */}
