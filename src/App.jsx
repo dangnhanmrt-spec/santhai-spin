@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
-  loadStoreStats,
+  loadStoreStats, loadSettings, saveSetting,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
   loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
@@ -225,7 +225,7 @@ function Confetti() {
 }
 
 /* ─── RESULT MODAL ─── */
-function ResultModal({ result, phone, onClose }) {
+function ResultModal({ result, phone, onClose, closeLabel }) {
   if (!result) return null;
   const big   = result.prize_type === "special";
   const viral = result.prize_type === "viral";
@@ -303,7 +303,7 @@ function ResultModal({ result, phone, onClose }) {
           </>
         )}
         <button onClick={onClose} style={{ marginTop:16, width:"100%", padding:"13px", background:"linear-gradient(135deg,#f97316,#ea580c)", border:"none", borderRadius:12, color:"#fff", fontSize:16, fontWeight:800, cursor:"pointer" }}>
-          Đóng
+          {closeLabel||"Đóng"}
         </button>
       </div>
     </div>
@@ -314,187 +314,276 @@ function ResultModal({ result, phone, onClose }) {
 function CustomerPage({ onAdmin }) {
   const [prizes,   setPrizes]   = useState([]);
   const [stats,    setStats]    = useState([]);
-  const [bill,     setBill]     = useState("");
-  const [phone,    setPhone]    = useState("");
-  const [detectedStore, setDetectedStore] = useState({ id:"", name:"" });
-  const [err,      setErr]      = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [spins,    setSpins]    = useState(0);
-  const [pendingResult, setPendingResult] = useState(null);
-  const [spinning, setSpinning] = useState(false);
-  const [showResult, setShowResult] = useState(null);
-  const wheelSize = typeof window !== "undefined" ? Math.min(300, window.innerWidth - 48) : 300;
+  const [settings, setSettings] = useState({
+    event_name:"SanThai", event_subtitle:"Vòng Quay May Mắn",
+    description:"", show_prize_list:"false",
+    bg_color:"#fff7ed", bg_image_url:"", frame_image_url:""
+  });
+
+  // Multi-bill queue
+  const [bill,       setBill]       = useState("");
+  const [phone,      setPhone]      = useState(()=>{ try{return localStorage.getItem("st_phone")||""}catch{return""} });
+  const [billQueue,  setBillQueue]  = useState([]); // [{billCode, result}]
+  const [err,        setErr]        = useState("");
+  const [loading,    setLoading]    = useState(false);
+
+  // Spin state
+  const [spinIdx,    setSpinIdx]    = useState(-1);  // which result we're animating
+  const [spinning,   setSpinning]   = useState(false);
+  const [curResult,  setCurResult]  = useState(null); // result modal after each spin
+  const [descOpen,   setDescOpen]   = useState(false);
+
+  const showPrizeList = settings.show_prize_list !== "false";
+  const hasBg = settings.bg_image_url && settings.bg_image_url.startsWith("http");
+  const wheelSize = typeof window!=="undefined"
+    ? Math.min(showPrizeList?300:420, window.innerWidth-48)
+    : 340;
+
+  const bgStyle = hasBg
+    ? { backgroundImage:`url(${settings.bg_image_url})`, backgroundSize:"cover", backgroundPosition:"center" }
+    : { background: settings.bg_color || "#fff7ed" };
 
   useEffect(() => {
     loadActivePrizes().then(setPrizes);
     loadStoreStats().then(setStats);
-    const t = setInterval(() => loadStoreStats().then(setStats), 60000);
-    return () => clearInterval(t);
+    loadSettings().then(s => { if(Object.keys(s).length) setSettings(prev=>({...prev,...s})); });
+    const t = setInterval(()=>loadStoreStats().then(setStats), 60000);
+    return ()=>clearInterval(t);
   }, []);
 
-  // Auto-detect store khi bill thay đổi
+  // Auto-detect store from bill prefix
   const handleBillChange = (val) => {
-    const upper = val.toUpperCase();
-    setBill(upper);
-    if (upper.length >= 2) setDetectedStore(detectStore(upper));
-    else setDetectedStore({ id:"", name:"" });
+    setBill(val.toUpperCase());
+    setErr("");
   };
 
-  const handleGetSpin = async () => {
+  // Submit one bill → add to queue
+  const handleAddBill = async () => {
     const b = bill.trim().toUpperCase();
-    const p = phone.replace(/\D/g, "");
+    const p = phone.replace(/\D/g,"");
     if (!b || b.length < 4) return setErr("Vui lòng nhập mã bill hợp lệ.");
     if (p.length < 9 || p.length > 11) return setErr("Số điện thoại không hợp lệ.");
+    if (billQueue.some(q=>q.billCode===b)) return setErr("Mã bill này đã thêm vào rồi.");
     setLoading(true); setErr("");
+    // Save phone to localStorage
+    try { localStorage.setItem("st_phone", p); } catch {}
     const store = detectStore(b);
-    const res = await doSpin(b, p, store.id || null, store.name || null);
+    const res   = await doSpin(b, p, store.id||null, store.name||null);
     setLoading(false);
-    if (!res || res.error === "network") return setErr("Không kết nối được. Kiểm tra mạng.");
-    if (res.error === "bill_used")       return setErr("Mã bill này đã được sử dụng rồi.");
-    if (res.error === "setup_required")  return setErr("Hệ thống chưa sẵn sàng. Liên hệ quản lý.");
-    if (res.error)                       return setErr(res.message || "Lỗi hệ thống, thử lại.");
+    if (!res || res.error==="network")     return setErr("Không kết nối được. Kiểm tra mạng.");
+    if (res.error==="bill_used")           return setErr("Mã bill này đã được sử dụng rồi.");
+    if (res.error==="setup_required")      return setErr("Hệ thống chưa sẵn sàng. Liên hệ quản lý.");
+    if (res.error)                         return setErr(res.message||"Lỗi hệ thống, thử lại.");
     if (res.ok) {
-      setPendingResult(res);
-      setSpins(n => n + 1);
-      setBill(""); setPhone("");
+      setBillQueue(q=>[...q, { billCode:b, store:store.name, result:res }]);
+      setBill("");
     }
   };
 
-  const handleSpin = () => {
-    if (!pendingResult || spinning) return;
+  // Start spinning through queue
+  const handleStartSpin = () => {
+    if (billQueue.length===0 || spinning) return;
+    setSpinIdx(0);
     setSpinning(true);
   };
 
-  const handleSpinDone = useCallback(() => {
-    setTimeout(() => {
-      setShowResult(pendingResult);
+  const handleSpinDone = useCallback(()=>{
+    setTimeout(()=>{
+      setCurResult(billQueue[spinIdx]?.result || null);
       setSpinning(false);
-      setPendingResult(null);
-      setSpins(0);
-    }, 300);
-  }, [pendingResult]);
+    }, 400);
+  }, [spinIdx, billQueue]);
 
-  const totalProb = prizes.reduce((s, p) => s + (p.probability || 0), 0);
+  const handleNextSpin = () => {
+    setCurResult(null);
+    const next = spinIdx + 1;
+    if (next < billQueue.length) {
+      setSpinIdx(next);
+      setSpinning(true);
+    } else {
+      // All done
+      setSpinIdx(-1);
+      setBillQueue([]);
+    }
+  };
+
+  const currentPrize = spinning || curResult
+    ? billQueue[spinIdx]?.result
+    : null;
+
+  const tooManySpins = billQueue.length >= 5;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#fff7ed" }}>
+    <div style={{ minHeight:"100vh", ...bgStyle }}>
       <style>{G}</style>
 
       {/* Header */}
       <div style={{ background:"linear-gradient(135deg,#f97316,#ea580c,#dc2626)", padding:"18px 24px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <div>
           <div style={{ fontSize:24, fontWeight:900, color:"#fff", fontFamily:"'Baloo 2',sans-serif", letterSpacing:1 }}>
-            🎯 SanThai
+            🎯 {settings.event_name||"SanThai"}
           </div>
           <div style={{ fontSize:13, color:"rgba(255,255,255,.8)", fontWeight:600 }}>
-            Vòng Quay May Mắn — Thất Kiếm Lệnh
+            {settings.event_subtitle||"Vòng Quay May Mắn"}
           </div>
         </div>
-        <div onClick={onAdmin} style={{ fontSize:11, color:"rgba(255,255,255,.4)", cursor:"default", userSelect:"none" }}>v2</div>
+        <div onClick={onAdmin} style={{ fontSize:11, color:"rgba(255,255,255,.3)", cursor:"default", userSelect:"none" }}>v2</div>
       </div>
 
-      {/* Main split layout */}
+      {/* Main split */}
       <div style={{ display:"flex", flexWrap:"wrap", gap:0, minHeight:"calc(100vh - 80px - 60px)" }}>
 
-        {/* LEFT — Input form */}
-        <div style={{ flex:"1 1 320px", padding:"32px 28px", background:"#fff", borderRight:"1px solid #fed7aa", display:"flex", flexDirection:"column", gap:20 }}>
+        {/* LEFT — Form */}
+        <div style={{ flex:"1 1 320px", padding:"28px 24px", background:"rgba(255,255,255,.92)", borderRight:"1px solid #fed7aa", display:"flex", flexDirection:"column", gap:16 }}>
 
-          <div style={{ background:"linear-gradient(135deg,#fff7ed,#fef3c7)", borderRadius:12, padding:"12px 16px", borderLeft:"4px solid #f59e0b", fontSize:13, color:"#92400e", lineHeight:1.6 }}>
+          {/* Warning banner */}
+          <div style={{ background:"linear-gradient(135deg,#fffbeb,#fef3c7)", borderRadius:10, padding:"10px 14px", borderLeft:"4px solid #f59e0b", fontSize:13, color:"#92400e", lineHeight:1.6 }}>
             ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
 
-          {/* Bill code — store auto-detected from prefix */}
-          <div>
-            <label style={{ display:"block", fontSize:14, fontWeight:700, color:"#44403c", marginBottom:8 }}>
-              🧾 Mã bill (in trên hóa đơn)
-            </label>
-            <input value={bill} onChange={e => handleBillChange(e.target.value)}
-              onKeyDown={e => e.key==="Enter" && handleGetSpin()}
-              placeholder="VD: SXVNT212106" maxLength={30} disabled={loading}
-              autoCapitalize="characters"
-              style={{ width:"100%", padding:"13px 16px", border:`2px solid ${detectedStore.name?"#10b981":"#fed7aa"}`, borderRadius:12, fontSize:16, fontWeight:700, letterSpacing:1, color:"#1c1917" }}/>
-            {detectedStore.name ? (
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:5 }}>
-                <span style={{ fontSize:15 }}>🏪</span>
-                <span style={{ fontSize:13, color:"#059669", fontWeight:700 }}>{detectedStore.name}</span>
-              </div>
-            ) : bill.length >= 2 ? (
-              <div style={{ fontSize:12, color:"#f59e0b", marginTop:4 }}>⚠ Không nhận ra mã cửa hàng — vẫn có thể quay</div>
-            ) : null}
-          </div>
+          {/* Description toggle */}
+          {settings.description && (
+            <div>
+              <button onClick={()=>setDescOpen(o=>!o)}
+                style={{ background:"rgba(249,115,22,.1)", border:"1px solid rgba(249,115,22,.3)", borderRadius:8, padding:"8px 14px", fontSize:13, color:"#ea580c", fontWeight:700, cursor:"pointer", width:"100%", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span>📋 Thể lệ & Thông tin sự kiện</span>
+                <span>{descOpen?"▲":"▼"}</span>
+              </button>
+              {descOpen && (
+                <div style={{ background:"#fff7ed", borderRadius:"0 0 10px 10px", padding:"12px 14px", fontSize:14, color:"#78350f", lineHeight:1.8, whiteSpace:"pre-wrap", borderTop:"1px solid #fed7aa" }}>
+                  {settings.description}
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Phone */}
+          {/* Phone (saved via localStorage) */}
           <div>
             <label style={{ display:"block", fontSize:14, fontWeight:700, color:"#44403c", marginBottom:8 }}>
               📱 Số điện thoại
             </label>
-            <input value={phone} onChange={e => setPhone(e.target.value)} type="tel"
-              onKeyDown={e => e.key==="Enter" && handleGetSpin()}
-              placeholder="VD: 0901234567" maxLength={11} disabled={loading}
-              style={{ width:"100%", padding:"13px 16px", border:"2px solid #fed7aa", borderRadius:12, fontSize:15, color:"#1c1917" }}/>
-            <div style={{ fontSize:12, color:"#a8a29e", marginTop:5 }}>Dùng để liên hệ khi trúng giải lớn</div>
+            <input value={phone} onChange={e=>setPhone(e.target.value)} type="tel"
+              placeholder="VD: 0901234567" maxLength={11} disabled={billQueue.length>0&&spinning}
+              style={{ width:"100%", padding:"12px 14px", border:"2px solid #fed7aa", borderRadius:12, fontSize:15, color:"#1c1917", boxSizing:"border-box" }}/>
+            <div style={{ fontSize:12, color:"#a8a29e", marginTop:4 }}>Số được lưu để không cần nhập lại lần sau</div>
           </div>
 
-          {err && (
-            <div style={{ background:"#fef2f2", border:"2px solid #fecaca", borderRadius:10, padding:"10px 14px", fontSize:14, color:"#dc2626", animation:"shake .3s ease" }}>
-              {err}
+          {/* Bill input */}
+          <div>
+            <label style={{ display:"block", fontSize:14, fontWeight:700, color:"#44403c", marginBottom:8 }}>
+              🧾 Mã bill (in trên hóa đơn)
+            </label>
+            <input value={bill} onChange={e=>handleBillChange(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleAddBill()}
+              placeholder="VD: SXVNT212106" maxLength={30} disabled={loading||spinning}
+              autoCapitalize="characters"
+              style={{ width:"100%", padding:"13px 16px", border:`2px solid ${detectStore(bill).name?"#10b981":"#fed7aa"}`, borderRadius:12, fontSize:16, fontWeight:700, letterSpacing:1, color:"#1c1917", boxSizing:"border-box" }}/>
+            {detectStore(bill).name ? (
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:5 }}>
+                <span>🏪</span>
+                <span style={{ fontSize:13, color:"#059669", fontWeight:700 }}>{detectStore(bill).name}</span>
+              </div>
+            ) : bill.length>=2 ? (
+              <div style={{ fontSize:12, color:"#f59e0b", marginTop:4 }}>⚠ Không nhận ra mã CH — vẫn có thể quay</div>
+            ) : null}
+          </div>
+
+          {err && <div style={{ background:"#fef2f2", border:"2px solid #fecaca", borderRadius:10, padding:"10px 14px", fontSize:14, color:"#dc2626" }}>{err}</div>}
+
+          {/* Too many spins warning */}
+          {tooManySpins && (
+            <div style={{ background:"#fef2f2", border:"2px solid #ef4444", borderRadius:10, padding:"10px 14px", fontSize:13, color:"#dc2626", lineHeight:1.6 }}>
+              ⚠️ Tích lũy nhiều bill sẽ được kiểm tra kỹ trong đợt đối chiếu cuối ngày.
             </div>
           )}
 
-          <button onClick={handleGetSpin} disabled={loading || !!pendingResult}
-            style={{ padding:"15px", background: pendingResult?"#d1fae5":"linear-gradient(135deg,#f97316,#ea580c)",
-              border:"none", borderRadius:14, color:"#fff", fontSize:17, fontWeight:900, cursor:loading||pendingResult?"not-allowed":"pointer",
-              opacity: loading || pendingResult ? .7 : 1, letterSpacing:.5,
-              boxShadow:"0 4px 20px rgba(249,115,22,.4)", transition:"all .2s" }}>
-            {loading ? "⏳ Đang xác nhận…" : pendingResult ? "✅ Đã nhận lượt — Quay ngay!" : "🎟 NHẬN LƯỢT QUAY"}
+          {/* Add bill button */}
+          <button onClick={handleAddBill} disabled={loading||spinning||!bill.trim()}
+            style={{ padding:"14px", background: bill.trim()&&!loading&&!spinning?"linear-gradient(135deg,#f97316,#ea580c)":"#e5e7eb",
+              border:"none", borderRadius:14, color: bill.trim()&&!loading&&!spinning?"#fff":"#9ca3af",
+              fontSize:16, fontWeight:900, cursor:bill.trim()&&!loading&&!spinning?"pointer":"not-allowed",
+              boxShadow: bill.trim()&&!loading&&!spinning?"0 4px 20px rgba(249,115,22,.4)":"none" }}>
+            {loading?"⏳ Đang xác nhận…":"✅ NHẬN LƯỢT QUAY"}
           </button>
 
-          <div style={{ fontSize:12, color:"#a8a29e", textAlign:"center" }}>Mỗi mã bill chỉ dùng được 1 lần</div>
+          {/* Queue list */}
+          {billQueue.length>0 && (
+            <div style={{ background:"#f0fdf4", borderRadius:12, padding:"12px 14px", border:"2px solid #a7f3d0" }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#065f46", marginBottom:8 }}>
+                🎯 Đã nhận {billQueue.length} lượt quay:
+              </div>
+              {billQueue.map((q,i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:"#374151", marginBottom:4, padding:"4px 0", borderBottom:"1px solid #d1fae5" }}>
+                  <span style={{ fontFamily:"monospace", fontWeight:700 }}>{q.billCode}</span>
+                  <span style={{ color:"#6b7280" }}>{q.store||"—"}</span>
+                  <span style={{ color: i<spinIdx?"#10b981":i===spinIdx&&spinning?"#f97316":"#94a3b8" }}>
+                    {i<spinIdx?"✓ Đã quay":i===spinIdx&&spinning?"🌀 Đang quay…":"⏳ Chờ"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ fontSize:11, color:"#a8a29e", textAlign:"center" }}>Mỗi mã bill chỉ dùng được 1 lần</div>
         </div>
 
         {/* RIGHT — Wheel */}
-        <div style={{ flex:"1 1 320px", padding:"32px 24px", background:"linear-gradient(160deg,#fff7ed,#fef3c7)", display:"flex", flexDirection:"column", alignItems:"center", gap:20 }}>
+        <div style={{ flex:"1 1 320px", padding:"28px 20px", background:"rgba(255,247,237,.7)", display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
 
-          {/* Spin count badge */}
-          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{
-              background: spins > 0 ? "linear-gradient(135deg,#f97316,#ea580c)" : "#e5e7eb",
-              borderRadius:50, padding:"8px 20px", fontSize:16, fontWeight:800,
-              color: spins > 0 ? "#fff" : "#9ca3af",
-              boxShadow: spins > 0 ? "0 4px 16px rgba(249,115,22,.4)" : "none",
-              animation: spins > 0 ? "pulse-ring 1.5s infinite" : "none",
-              transition: "all .4s",
-            }}>
-              🎯 {spins} lượt quay
-            </div>
+          {/* Spin count */}
+          <div style={{
+            background: billQueue.length>0&&spinIdx<0?"linear-gradient(135deg,#f97316,#ea580c)":"#e5e7eb",
+            borderRadius:50, padding:"8px 22px", fontSize:16, fontWeight:800,
+            color: billQueue.length>0&&spinIdx<0?"#fff":"#9ca3af",
+            boxShadow: billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(249,115,22,.4)":"none",
+            animation: billQueue.length>0&&spinIdx<0?"pulse-ring 1.5s infinite":"none",
+            transition:"all .4s",
+          }}>
+            🎯 {Math.max(0, billQueue.length - Math.max(0,spinIdx))} lượt quay
+            {spinIdx>=0&&spinning&&` — Lượt ${spinIdx+1}/${billQueue.length}`}
           </div>
 
-          <WheelCanvas prizes={prizes} winnerId={pendingResult?.prize_id} spinning={spinning} onDone={handleSpinDone} size={wheelSize}/>
+          {/* Wheel with optional frame overlay */}
+          <div style={{ position:"relative", display:"inline-block" }}>
+            <WheelCanvas
+              prizes={prizes}
+              winnerId={currentPrize?.prize_id}
+              spinning={spinning}
+              onDone={handleSpinDone}
+              size={wheelSize}/>
+            {settings.frame_image_url && settings.frame_image_url.startsWith("http") && (
+              <img src={settings.frame_image_url} alt="" style={{
+                position:"absolute", inset:-10, width:"calc(100% + 20px)", height:"calc(100% + 20px)",
+                pointerEvents:"none", objectFit:"contain",
+              }}/>
+            )}
+          </div>
 
-          <button onClick={handleSpin}
-            disabled={!pendingResult || spinning}
-            style={{
-              padding:"15px 40px", fontSize:19, fontWeight:900, border:"none", borderRadius:50, cursor: pendingResult&&!spinning?"pointer":"not-allowed",
-              background: pendingResult&&!spinning ? "linear-gradient(135deg,#7c3aed,#6d28d9)" : "#e5e7eb",
-              color: pendingResult&&!spinning ? "#fff" : "#9ca3af",
-              boxShadow: pendingResult&&!spinning ? "0 6px 24px rgba(124,58,237,.5)" : "none",
-              transition:"all .3s", letterSpacing:.5,
-              animation: pendingResult&&!spinning ? "pulse-ring 1.5s infinite" : "none",
-            }}>
-            {spinning ? "🌀 Đang quay…" : pendingResult ? "🎰 QUAY NGAY!" : "Nhập mã bill trước"}
-          </button>
+          {/* Spin / Add more buttons */}
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={handleStartSpin}
+              disabled={billQueue.length===0||spinning||spinIdx>=0}
+              style={{
+                padding:"14px 28px", fontSize:17, fontWeight:900, border:"none", borderRadius:50, cursor:billQueue.length>0&&!spinning&&spinIdx<0?"pointer":"not-allowed",
+                background:billQueue.length>0&&!spinning&&spinIdx<0?"linear-gradient(135deg,#7c3aed,#6d28d9)":"#e5e7eb",
+                color:billQueue.length>0&&!spinning&&spinIdx<0?"#fff":"#9ca3af",
+                boxShadow:billQueue.length>0&&!spinning&&spinIdx<0?"0 6px 24px rgba(124,58,237,.5)":"none",
+                animation:billQueue.length>0&&!spinning&&spinIdx<0?"pulse-ring 1.5s infinite":"none",
+              }}>
+              {spinning?"🌀 Đang quay…":billQueue.length>0&&spinIdx<0?"🎰 QUAY NGAY!":"Nhập bill trước"}
+            </button>
+          </div>
 
-          {/* Prize grid preview */}
-          {prizes.length > 0 && (
-            <div style={{ width:"100%", maxWidth:380 }}>
+          {/* Prize list (toggleable) */}
+          {showPrizeList && prizes.length>0 && (
+            <div style={{ width:"100%", maxWidth:400 }}>
               <div style={{ fontSize:13, fontWeight:700, color:"#92400e", marginBottom:8, textAlign:"center" }}>Danh sách phần thưởng</div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:6 }}>
-                {prizes.map((p, i) => (
-                  <div key={p.id} style={{ background:"#fff", borderRadius:10, padding:"8px 6px", textAlign:"center",
-                    border:"2px solid #fed7aa", fontSize:11, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
-                    <div style={{ width:12, height:12, borderRadius:"50%", background:WHEEL_COLORS[i%WHEEL_COLORS.length] }}/>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))", gap:6 }}>
+                {prizes.map((p,i)=>(
+                  <div key={p.id} style={{ background:"#fff", borderRadius:10, padding:"8px 6px", textAlign:"center", border:"2px solid #fed7aa", fontSize:11, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                    <div style={{ width:10, height:10, borderRadius:"50%", background:WHEEL_COLORS[i%WHEEL_COLORS.length] }}/>
                     <div style={{ fontSize:16 }}>{p.icon}</div>
-                    <div style={{ fontWeight:700, color:"#44403c", lineHeight:1.3 }}>{p.short_name || p.name}</div>
+                    <div style={{ fontWeight:700, color:"#44403c", lineHeight:1.3 }}>{p.short_name||p.name}</div>
                   </div>
                 ))}
               </div>
@@ -504,7 +593,7 @@ function CustomerPage({ onAdmin }) {
       </div>
 
       {/* PUBLIC LEADERBOARD */}
-      <div style={{ background:"#fff", borderTop:"2px solid #fed7aa", padding:"28px 24px" }}>
+      <div style={{ background:"rgba(255,255,255,.95)", borderTop:"2px solid #fed7aa", padding:"28px 24px" }}>
         <div style={{ maxWidth:900, margin:"0 auto" }}>
           <div style={{ fontSize:20, fontWeight:900, color:"#1c1917", marginBottom:4, fontFamily:"'Baloo 2',sans-serif" }}>
             🏆 Bảng xếp hạng cửa hàng
@@ -514,32 +603,32 @@ function CustomerPage({ onAdmin }) {
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}>
               <thead>
                 <tr style={{ background:"linear-gradient(135deg,#fff7ed,#fef3c7)" }}>
-                  {["#","Cửa hàng","Tổng lượt quay","Giải lớn 🏆","Hoạt động gần nhất"].map(h => (
+                  {["#","Cửa hàng","Tổng lượt quay","Giải lớn 🏆","Hoạt động gần nhất"].map(h=>(
                     <th key={h} style={{ padding:"12px 14px", textAlign:"left", fontSize:13, fontWeight:800, color:"#92400e", whiteSpace:"nowrap" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {stats.length === 0 ? (
+                {stats.length===0?(
                   <tr><td colSpan={5} style={{ padding:24, textAlign:"center", color:"#a8a29e", fontSize:14 }}>
                     Chưa có dữ liệu — event chưa bắt đầu
                   </td></tr>
-                ) : stats.map((s, i) => (
-                  <tr key={s.store_id} style={{ borderTop:"1px solid #fed7aa", background: i===0?"#fff7ed":i===1?"#fefce8":i===2?"#f0fdf4":"#fff" }}>
+                ):stats.map((s,i)=>(
+                  <tr key={s.store_id} style={{ borderTop:"1px solid #fed7aa", background:i===0?"#fff7ed":i===1?"#fefce8":i===2?"#f0fdf4":"#fff" }}>
                     <td style={{ padding:"11px 14px", fontWeight:900, color:i<3?"#f97316":"#78716c", fontSize:16 }}>
                       {i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}
                     </td>
-                    <td style={{ padding:"11px 14px", fontWeight:700, color:"#1c1917" }}>{s.store_name || s.store_id}</td>
+                    <td style={{ padding:"11px 14px", fontWeight:700, color:"#1c1917" }}>{s.store_name||s.store_id}</td>
                     <td style={{ padding:"11px 14px", color:"#f97316", fontWeight:800, fontSize:16 }}>{s.total_spins}</td>
                     <td style={{ padding:"11px 14px" }}>
-                      {s.big_wins > 0 ? (
+                      {s.big_wins>0?(
                         <span style={{ background:"#fef3c7", border:"2px solid #f59e0b", borderRadius:20, padding:"3px 10px", fontSize:13, fontWeight:800, color:"#92400e" }}>
-                          🏆 {s.big_wins} giải
+                          🏆 {s.big_wins}
                         </span>
-                      ) : <span style={{ color:"#a8a29e", fontSize:13 }}>—</span>}
+                      ):<span style={{ color:"#a8a29e", fontSize:13 }}>—</span>}
                     </td>
                     <td style={{ padding:"11px 14px", color:"#a8a29e", fontSize:13 }}>
-                      {s.last_spin ? new Date(s.last_spin).toLocaleString("vi-VN") : "—"}
+                      {s.last_spin?new Date(s.last_spin).toLocaleString("vi-VN"):"—"}
                     </td>
                   </tr>
                 ))}
@@ -549,282 +638,19 @@ function CustomerPage({ onAdmin }) {
         </div>
       </div>
 
-      {showResult && <ResultModal result={showResult} phone={phone} onClose={() => setShowResult(null)}/>}
-    </div>
-  );
-}
-
-/* ─── GENERATE TEST VOUCHERS EXCEL ─── */
-function genTestVoucherXLS(prizes) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const mkCode = () => Array.from({length:8},()=>chars[Math.floor(Math.random()*chars.length)]).join("");
-  const rows = [];
-  prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher&&p.active).forEach(p=>{
-    for (let i=0;i<10;i++) rows.push({ prize:p.name, code:mkCode(), prizeId:p.id });
-  });
-  const hdr = `<tr><th style="background:#f97316;color:#fff;font-weight:bold">Giải thưởng</th><th style="background:#f97316;color:#fff;font-weight:bold">Mã Voucher (test)</th><th style="background:#f97316;color:#fff;font-weight:bold">Prize ID</th></tr>`;
-  const body = rows.map(r=>`<tr><td>${r.prize}</td><td style="font-family:monospace;font-weight:bold">${r.code}</td><td>${r.prizeId}</td></tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-    <head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Test Vouchers</x:Name></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
-    <body><table>${hdr}${body}</table></body></html>`;
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["\uFEFF"+html],{type:"application/vnd.ms-excel;charset=utf-8"}));
-  a.download = "santhai_test_vouchers.xls"; a.click();
-  return rows; // trả về để admin có thể import thẳng
-}
-
-/* ─── TEST MODE PANEL ─── */
-// Tạo sequence 30 lần, cover đủ tất cả prizes
-function buildTestSequence(prizes) {
-  if (!prizes.length) return [];
-  const seq = [...prizes]; // mỗi giải ít nhất 1 lần
-  while (seq.length < 30) {
-    seq.push(prizes[Math.floor(Math.random()*prizes.length)]);
-  }
-  // Fisher-Yates shuffle để ngẫu nhiên
-  for (let i=seq.length-1;i>0;i--) {
-    const j=Math.floor(Math.random()*(i+1));
-    [seq[i],seq[j]]=[seq[j],seq[i]];
-  }
-  return seq.slice(0,30);
-}
-
-function TestModePanel({ prizes, allPrizes }) {
-  const [seq,    setSeq]    = useState([]);
-  const [idx,    setIdx]    = useState(-1);
-  const [done,   setDone]   = useState(false);
-  const [preview,setPreview]= useState(null); // preview 1 giải cụ thể
-
-  const start = () => {
-    const s = buildTestSequence(allPrizes.filter(p=>p.active));
-    setSeq(s); setIdx(0); setDone(false);
-  };
-
-  const next = () => {
-    if (idx < seq.length-1) setIdx(i=>i+1);
-    else setDone(true);
-  };
-
-  const cur = seq[idx];
-  const covered = new Set(seq.slice(0,Math.max(0,idx+1)).map(p=>p.id));
-  const missing = allPrizes.filter(p=>p.active&&!covered.has(p.id));
-
-  const inp = {border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:14,color:"#1c1917",background:"#fff"};
-
-  return (
-    <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
-      {/* Left: Sequence runner */}
-      <div>
-        <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>🎰 30-lượt test — cover toàn bộ giải</h3>
-        <div style={{ background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#065f46",lineHeight:1.6 }}>
-          Sequence 30 lượt tự động cover đủ tất cả {allPrizes.filter(p=>p.active).length} giải active, sau đó shuffle ngẫu nhiên. Không ghi vào DB.
-        </div>
-
-        {idx<0 && !done && (
-          <button onClick={start} style={{ width:"100%",padding:"13px",background:"linear-gradient(135deg,#7c3aed,#6d28d9)",border:"none",borderRadius:12,color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",marginBottom:12 }}>
-            ▶ Bắt đầu test 30 lượt
-          </button>
-        )}
-
-        {idx>=0 && !done && cur && (
-          <div style={{ background:"#fff",border:"2px solid #7c3aed",borderRadius:14,padding:20,textAlign:"center" }}>
-            <div style={{ fontSize:11,fontWeight:700,color:"#7c3aed",letterSpacing:1,marginBottom:4 }}>LƯỢT {idx+1}/30</div>
-            <div style={{ fontSize:56,marginBottom:8 }}>{cur.icon}</div>
-            <div style={{ fontSize:22,fontWeight:900,color:"#1c1917",marginBottom:4 }}>{cur.name}</div>
-            <div style={{ fontSize:12,color:"#6b7280",marginBottom:14 }}>
-              Loại: <strong>{cur.prize_type}</strong> ·
-              {cur.prize_type==="normal"&&cur.has_voucher ? " Sẽ cấp voucher" : cur.prize_type==="special" ? " Liên hệ SĐT" : " Mất lượt"}
-            </div>
-            {cur.prize_type==="normal"&&cur.has_voucher && (
-              <div style={{ background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:10,padding:10,marginBottom:14,fontFamily:"monospace",fontWeight:900,fontSize:18,color:"#92400e",letterSpacing:3 }}>
-                TEST-{String(idx+1).padStart(3,"0")}
-              </div>
-            )}
-            {cur.prize_type==="special" && (
-              <div style={{ background:"#fef2f2",border:"2px solid #ef4444",borderRadius:10,padding:10,marginBottom:14,fontSize:13,color:"#dc2626" }}>
-                Nhân viên sẽ gọi số: <strong>0901234567</strong>
-              </div>
-            )}
-            <button onClick={next} style={{ padding:"11px 30px",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:10,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer" }}>
-              {idx<seq.length-1?"Lượt tiếp →":"✅ Kết thúc"}
-            </button>
-          </div>
-        )}
-
-        {done && (
-          <div style={{ background:"#f0fdf4",border:"2px solid #10b981",borderRadius:14,padding:20,textAlign:"center" }}>
-            <div style={{ fontSize:40,marginBottom:8 }}>🎉</div>
-            <div style={{ fontSize:20,fontWeight:900,color:"#065f46",marginBottom:4 }}>Test hoàn thành!</div>
-            <div style={{ fontSize:14,color:"#6b7280",marginBottom:14 }}>30/30 lượt · Đã cover {allPrizes.filter(p=>p.active).length} giải</div>
-            <button onClick={()=>{setIdx(-1);setDone(false);setSeq([]);}} style={{ padding:"10px 24px",background:"#f3f4f6",border:"none",borderRadius:10,color:"#374151",fontWeight:700,cursor:"pointer" }}>
-              Reset
-            </button>
-          </div>
-        )}
-
-        {idx>=0 && !done && (
-          <div style={{ marginTop:12,fontSize:12,color:"#9ca3af" }}>
-            {missing.length>0 ? `⏳ Chưa cover: ${missing.map(p=>p.short_name||p.name).join(", ")}` : "✅ Đã cover tất cả giải!"}
-          </div>
-        )}
-      </div>
-
-      {/* Right: Preview từng giải */}
-      <div>
-        <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>👁 Preview từng giải</h3>
-        <div style={{ fontSize:13,color:"#6b7280",marginBottom:10 }}>Click vào bất kỳ giải nào để xem màn hình kết quả sẽ hiển thị như thế nào.</div>
-        <div style={{ display:"flex",flexDirection:"column",gap:6,maxHeight:400,overflowY:"auto" }}>
-          {allPrizes.filter(p=>p.active).map(p=>(
-            <button key={p.id} onClick={()=>setPreview(p)}
-              style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,cursor:"pointer",textAlign:"left",
-                borderColor:preview?.id===p.id?"#f97316":"#e5e7eb",
-                background:preview?.id===p.id?"#fff7ed":"#fff" }}>
-              <span style={{ fontSize:22 }}>{p.icon}</span>
-              <div>
-                <div style={{ fontWeight:700,fontSize:14 }}>{p.name}</div>
-                <div style={{ fontSize:11,color:"#9ca3af" }}>{p.prize_type} · {p.probability}%</div>
-              </div>
-            </button>
-          ))}
-        </div>
-        {preview && (
-          <div style={{ marginTop:12,background:"#fff",border:"2px solid #f97316",borderRadius:14,padding:16,textAlign:"center" }}>
-            <div style={{ fontSize:11,color:"#92400e",fontWeight:700,marginBottom:4 }}>PREVIEW — {preview.name}</div>
-            <div style={{ fontSize:48,marginBottom:6 }}>{preview.icon}</div>
-            <div style={{ fontSize:18,fontWeight:900 }}>{preview.name}</div>
-            {preview.prize_type==="normal"&&preview.has_voucher&&<div style={{ margin:"10px 0",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:8,padding:8,fontFamily:"monospace",fontWeight:900,fontSize:16,letterSpacing:3,color:"#92400e" }}>ABCD1234</div>}
-            {preview.prize_type==="special"&&<div style={{ margin:"10px 0",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:8,fontSize:13,color:"#dc2626" }}>Nhân viên sẽ liên hệ qua SĐT</div>}
-            {preview.prize_type==="viral"&&<div style={{ margin:"10px 0",fontSize:13,color:"#ef4444",fontWeight:700 }}>😅 Mất lượt — nhận 1 topping tự chọn</div>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── VOUCHER DETAIL PANEL ─── */
-function VoucherDetailPanel({ prizes }) {
-  const [selPrize, setSelPrize] = useState("");
-  const [vouchers, setVouchers] = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [selected, setSelected] = useState(new Set());
-  const [filterSt, setFilterSt] = useState("all");
-  const [msg,      setMsg]      = useState("");
-
-  const loadVouchers = async () => {
-    if (!selPrize) return;
-    setLoading(true);
-    const data = await loadPrizeVouchers(+selPrize, filterSt==="all"?null:filterSt);
-    setVouchers(Array.isArray(data)?data:[]); setSelected(new Set());
-    setLoading(false);
-  };
-
-  useEffect(() => { loadVouchers(); }, [selPrize, filterSt]);
-
-  const handleDelete = async (id) => {
-    if (!confirm("Xóa voucher này?")) return;
-    await deleteVoucher(id); loadVouchers();
-  };
-
-  const handleBulkDelete = async () => {
-    if (selected.size===0 || !confirm(`Xóa ${selected.size} voucher?`)) return;
-    await bulkDeleteVouchers([...selected]);
-    setMsg(`✅ Đã xóa ${selected.size} voucher`);
-    setTimeout(()=>setMsg(""),3000);
-    loadVouchers();
-  };
-
-  const inp = {border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:14,color:"#1c1917",background:"#fff"};
-  const th  = {padding:"8px 12px",textAlign:"left",fontSize:12,fontWeight:700,color:"#6b7280",borderBottom:"1px solid #e5e7eb",whiteSpace:"nowrap"};
-  const td  = {padding:"8px 12px",borderBottom:"1px solid #f3f4f6",fontSize:13,verticalAlign:"middle"};
-  const STATUS_COLOR = {unused:"#10b981",assigned:"#f59e0b",redeemed:"#6b7280",voided:"#ef4444"};
-  const STATUS_LABEL = {unused:"Chưa cấp",assigned:"Đã cấp",redeemed:"Đã dùng",voided:"Đã hủy"};
-
-  const displayed = filterSt==="all" ? vouchers : vouchers.filter(v=>v.status===filterSt);
-
-  return (
-    <div>
-      <h3 style={{ fontSize:15,fontWeight:800,marginBottom:10 }}>🔍 Quản lý voucher chi tiết</h3>
-      <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap" }}>
-        <select value={selPrize} onChange={e=>setSelPrize(e.target.value)} style={{ ...inp,minWidth:200 }}>
-          <option value="">-- Chọn giải --</option>
-          {prizes.filter(p=>p.prize_type==="normal"&&p.has_voucher).map(p=>(
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <select value={filterSt} onChange={e=>setFilterSt(e.target.value)} style={inp}>
-          <option value="all">Tất cả</option>
-          <option value="unused">Chưa cấp</option>
-          <option value="assigned">Đã cấp</option>
-          <option value="redeemed">Đã dùng</option>
-          <option value="voided">Đã hủy</option>
-        </select>
-        {selected.size>0 && (
-          <button onClick={handleBulkDelete} style={{ ...inp,background:"#fef2f2",borderColor:"#fca5a5",color:"#dc2626",cursor:"pointer",fontWeight:700 }}>
-            🗑 Xóa {selected.size} mã đã chọn
-          </button>
-        )}
-        {displayed.filter(v=>v.status==="unused").length>0 && (
-          <button onClick={async()=>{
-            const unusedIds = displayed.filter(v=>v.status==="unused").map(v=>v.id);
-            if(!confirm(`Xóa toàn bộ ${unusedIds.length} voucher CHƯA CẤP?`)) return;
-            await bulkDeleteVouchers(unusedIds);
-            setMsg(`✅ Đã xóa ${unusedIds.length} voucher test`);
-            setTimeout(()=>setMsg(""),3000);
-            loadVouchers();
-          }} style={{ ...inp,background:"#fef2f2",borderColor:"#fca5a5",color:"#dc2626",cursor:"pointer",fontWeight:700 }}>
-            🗑 Xóa toàn bộ chưa cấp ({displayed.filter(v=>v.status==="unused").length})
-          </button>
-        )}
-      </div>
-      {msg && <div style={{ color:"#10b981",fontWeight:700,fontSize:14,marginBottom:10,background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 12px" }}>{msg}</div>}
-      {!selPrize ? (
-        <div style={{ padding:24,textAlign:"center",color:"#9ca3af",border:"2px dashed #e5e7eb",borderRadius:12 }}>Chọn giải thưởng để xem danh sách voucher</div>
-      ) : loading ? (
-        <div style={{ padding:24,textAlign:"center",color:"#9ca3af" }}>Đang tải…</div>
-      ) : (
-        <div style={{ overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb" }}>
-          <table style={{ width:"100%",borderCollapse:"collapse" }}>
-            <thead><tr style={{ background:"#f9fafb" }}>
-              <th style={{ ...th,width:36 }}><input type="checkbox" onChange={e=>{
-                if(e.target.checked) setSelected(new Set(displayed.map(v=>v.id)));
-                else setSelected(new Set());
-              }} checked={selected.size===displayed.length&&displayed.length>0}/></th>
-              {["Mã Voucher","Trạng thái","Bill","SĐT nhận","Thời gian tạo"].map(h=><th key={h} style={th}>{h}</th>)}
-              <th style={th}></th>
-            </tr></thead>
-            <tbody>
-              {displayed.length===0 ? (
-                <tr><td colSpan={7} style={{ ...td,textAlign:"center",color:"#9ca3af" }}>Không có voucher</td></tr>
-              ) : displayed.map(v=>(
-                <tr key={v.id}>
-                  <td style={td}><input type="checkbox" checked={selected.has(v.id)} onChange={e=>{
-                    const ns=new Set(selected); e.target.checked?ns.add(v.id):ns.delete(v.id); setSelected(ns);
-                  }}/></td>
-                  <td style={{ ...td,fontFamily:"monospace",fontWeight:700,fontSize:14 }}>{v.code}</td>
-                  <td style={td}>
-                    <span style={{ background:`${STATUS_COLOR[v.status]}20`,color:STATUS_COLOR[v.status],border:`1px solid ${STATUS_COLOR[v.status]}44`,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700 }}>
-                      {STATUS_LABEL[v.status]||v.status}
-                    </span>
-                  </td>
-                  <td style={{ ...td,fontFamily:"monospace",fontSize:12,color:"#6b7280" }}>{v.assigned_bill||"—"}</td>
-                  <td style={{ ...td,fontSize:12,color:"#6b7280" }}>{v.assigned_phone||"—"}</td>
-                  <td style={{ ...td,fontSize:12,color:"#9ca3af" }}>{v.created_at?new Date(v.created_at).toLocaleDateString("vi-VN"):"—"}</td>
-                  <td style={td}>
-                    {v.status==="unused" && (
-                      <button onClick={()=>handleDelete(v.id)} style={{ padding:"3px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:12 }}>🗑</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ padding:"8px 12px",fontSize:12,color:"#9ca3af" }}>{displayed.length} voucher</div>
-        </div>
+      {/* Result modal after each spin */}
+      {curResult && (
+        <ResultModal
+          result={curResult}
+          phone={phone}
+          onClose={handleNextSpin}
+          closeLabel={spinIdx<billQueue.length-1?`Quay lượt ${spinIdx+2} →`:"Xong 🎉"}
+        />
       )}
     </div>
   );
 }
+
 
 /* ─── ADMIN PAGE ─── */
 const ADMIN_TOKEN = typeof btoa !== "undefined" ? btoa(ADMIN_PWD + "_st26") : "";
@@ -857,9 +683,17 @@ function AdminPage({ onBack }) {
     window.location.replace(window.location.origin);
   };
 
-  const [tab, setTab]       = useState("prizes");
+  const [tab, setTab]       = useState("settings");
   const [loading, setLoading] = useState(false);
-  const [dbStatus, setDbStatus] = useState(null); // null | "ok" | "error"
+  const [dbStatus, setDbStatus] = useState(null);
+
+  // Admin settings state
+  const [adminSettings, setAdminSettings] = useState({
+    event_name:"", event_subtitle:"", description:"",
+    show_prize_list:"false", bg_color:"#fff7ed",
+    bg_image_url:"", frame_image_url:""
+  });
+  const [settingsSaved, setSettingsSaved] = useState(""); // null | "ok" | "error"
 
   // Data
   const [prizes,   setPrizes]   = useState([]);
@@ -887,16 +721,16 @@ function AdminPage({ onBack }) {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    // Kiểm tra kết nối DB trước
     const conn = await testConnection();
     setDbStatus(conn.ok ? "ok" : conn.error || "error");
     if (conn.ok) {
-      const [p, s, sp, b, v] = await Promise.all([
-        loadAllPrizes(), loadSpins(date), loadSpecialWinners(), loadBlacklist(), loadVouchers(),
+      const [p, s, sp, b, v, cfg] = await Promise.all([
+        loadAllPrizes(), loadSpins(date), loadSpecialWinners(), loadBlacklist(), loadVouchers(), loadSettings(),
       ]);
       setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
       setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
       setVouchers(Array.isArray(v)?v:[]);
+      if (cfg && Object.keys(cfg).length) setAdminSettings(prev=>({...prev,...cfg}));
     }
     setLoading(false);
   }, [date]);
@@ -1008,14 +842,15 @@ function AdminPage({ onBack }) {
   );
 
   const TABS=[
-    {id:"prizes",   label:"🎁 Cấu hình giải"},
-    {id:"spins",    label:"📋 Lịch sử"},
-    {id:"reconcile",label:"🔍 Đối chiếu"},
-    {id:"vouchers", label:"🎟 Vouchers"},
-    {id:"vdetail",  label:"🔧 Chi tiết voucher"},
-    {id:"test",     label:"🧪 Test Mode"},
-    {id:"special",  label:"🏆 Giải đặc biệt"},
-    {id:"blacklist",label:"🚫 Blacklist"},
+    {id:"settings",  label:"⚙️ Cài đặt"},
+    {id:"prizes",    label:"🎁 Cấu hình giải"},
+    {id:"spins",     label:"📋 Lịch sử"},
+    {id:"reconcile", label:"🔍 Đối chiếu"},
+    {id:"vouchers",  label:"🎟 Vouchers"},
+    {id:"vdetail",   label:"🔧 Chi tiết voucher"},
+    {id:"test",      label:"🧪 Test Mode"},
+    {id:"special",   label:"🏆 Giải đặc biệt"},
+    {id:"blacklist", label:"🚫 Blacklist"},
   ];
 
   return (
@@ -1055,6 +890,59 @@ function AdminPage({ onBack }) {
             {loading?"⏳":"🔄"} Làm mới
           </button>
         </div>
+
+        {/* ── CÀI ĐẶT SỰ KIỆN ── */}
+        {tab==="settings" && (
+          <div style={{ maxWidth:620 }}>
+            <h3 style={{ fontSize:16,fontWeight:900,marginBottom:16 }}>⚙️ Cài đặt sự kiện</h3>
+            {[
+              {key:"event_name",      label:"Tên sự kiện",          placeholder:"SanThai",                        type:"text",     hint:"Hiển thị ở header"},
+              {key:"event_subtitle",  label:"Tagline / Phụ đề",      placeholder:"Vòng Quay May Mắn — Thất Kiếm Lệnh", type:"text", hint:"Dòng nhỏ dưới tên"},
+              {key:"bg_color",        label:"Màu nền (nếu không dùng ảnh)", placeholder:"#fff7ed",              type:"color",    hint:""},
+              {key:"bg_image_url",    label:"URL ảnh nền",           placeholder:"https://...",                    type:"url",      hint:"Để trống nếu dùng màu nền"},
+              {key:"frame_image_url", label:"URL ảnh khung vòng quay", placeholder:"https://... (PNG có trong suốt)", type:"url",  hint:"Overlay lên trên wheel — nên dùng PNG trong suốt"},
+            ].map(({key,label,placeholder,type,hint})=>(
+              <div key={key} style={{ marginBottom:16 }}>
+                <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4,color:"#374151" }}>{label}</label>
+                {type==="color" ? (
+                  <div style={{ display:"flex",gap:10,alignItems:"center" }}>
+                    <input type="color" value={adminSettings[key]||"#fff7ed"} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} style={{ width:50,height:38,border:"1px solid #d1d5db",borderRadius:8,cursor:"pointer",padding:2 }}/>
+                    <input type="text" value={adminSettings[key]||""} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} style={{ ...inp,flex:1 }}/>
+                  </div>
+                ) : (
+                  <input type={type==="url"?"text":type} value={adminSettings[key]||""} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} style={{ ...inp,width:"100%" }}/>
+                )}
+                {hint && <div style={{ fontSize:12,color:"#9ca3af",marginTop:3 }}>{hint}</div>}
+              </div>
+            ))}
+            <div style={{ marginBottom:16 }}>
+              <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4,color:"#374151" }}>Thể lệ / Mô tả sự kiện</label>
+              <textarea value={adminSettings.description||""} onChange={e=>setAdminSettings(p=>({...p,description:e.target.value}))}
+                rows={6} placeholder={"VD:\n- Mỗi hóa đơn từ 3 ly trở lên được 1 lượt quay\n- Phần thưởng quy đổi trong vòng 30 ngày\n- Hotline: 1900..."}
+                style={{ ...inp,width:"100%",resize:"vertical",lineHeight:1.7 }}/>
+              <div style={{ fontSize:12,color:"#9ca3af",marginTop:3 }}>Hiển thị ở nút "Thể lệ & Thông tin" trên trang khách</div>
+            </div>
+            <div style={{ marginBottom:20 }}>
+              <label style={{ fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:10,cursor:"pointer",color:"#374151" }}>
+                <input type="checkbox" checked={adminSettings.show_prize_list==="true"}
+                  onChange={e=>setAdminSettings(p=>({...p,show_prize_list:e.target.checked?"true":"false"}))}
+                  style={{ width:18,height:18 }}/>
+                Hiển thị danh sách phần thưởng (ở trang khách)
+              </label>
+              <div style={{ fontSize:12,color:"#9ca3af",marginTop:4,marginLeft:28 }}>Tắt đi để vòng quay to hơn — thông tin giải cung cấp qua thể lệ</div>
+            </div>
+            <button onClick={async()=>{
+              setSettingsSaved("⏳ Đang lưu…");
+              const entries = Object.entries(adminSettings);
+              await Promise.all(entries.map(([k,v])=>saveSetting(k,v)));
+              setSettingsSaved("✅ Đã lưu! Reload trang khách để thấy thay đổi.");
+              setTimeout(()=>setSettingsSaved(""),4000);
+            }} style={{ padding:"12px 28px",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer" }}>
+              💾 Lưu cài đặt
+            </button>
+            {settingsSaved && <div style={{ marginTop:10,fontSize:14,color:"#10b981",fontWeight:700 }}>{settingsSaved}</div>}
+          </div>
+        )}
 
         {/* ── CẤU HÌNH GIẢI ── */}
         {tab==="prizes" && (
