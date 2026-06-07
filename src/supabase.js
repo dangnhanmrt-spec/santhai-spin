@@ -226,3 +226,24 @@ export async function bulkDeleteVouchers(ids) {
   if (!ids.length) return false;
   return remove("spin_vouchers", `id=in.(${ids.join(",")})`);
 }
+
+// ─── SETTINGS ───
+export async function loadSettings() {
+  const rows = await get("spin_settings", "limit=50");
+  if (!Array.isArray(rows) || rows.length === 0) return {};
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+export async function saveSetting(key, value) {
+  // upsert: patch nếu tồn tại, insert nếu chưa có
+  const r = await fetch(`${SUPA_URL}/rest/v1/spin_settings?key=eq.${encodeURIComponent(key)}`, {
+    method: "PATCH", headers: H, body: JSON.stringify({ value: String(value) })
+  });
+  if (!r.ok) {
+    await fetch(`${SUPA_URL}/rest/v1/spin_settings`, {
+      method: "POST", headers: { ...H, Prefer: "return=minimal" },
+      body: JSON.stringify({ key, value: String(value) })
+    });
+  }
+  return true;
+}
