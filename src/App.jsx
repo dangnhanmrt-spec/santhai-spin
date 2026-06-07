@@ -231,10 +231,18 @@ function ResultModal({ result, phone, onClose }) {
   const viral = result.prize_type === "viral";
   const code  = result.voucher_code;
 
+  // Tính HSD: 30 ngày từ hôm nay
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 30);
+  const dd = String(expiry.getDate()).padStart(2,"0");
+  const mm = String(expiry.getMonth()+1).padStart(2,"0");
+  const yy = String(expiry.getFullYear()).slice(2);
+  const hsd = `${dd}/${mm}/${yy}`;
+
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.6)", zIndex:900, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
       {big && <Confetti/>}
-      <div style={{ background:"#fff", borderRadius:24, padding:32, maxWidth:360, width:"100%", textAlign:"center", animation:"bounce-in .4s ease", boxShadow:"0 24px 64px rgba(0,0,0,.3)", position:"relative" }}>
+      <div style={{ background:"#fff", borderRadius:24, padding:32, maxWidth:380, width:"100%", textAlign:"center", animation:"bounce-in .4s ease", boxShadow:"0 24px 64px rgba(0,0,0,.3)", position:"relative" }}>
         <button onClick={onClose} style={{ position:"absolute", top:14, right:14, background:"#f1f5f9", border:"none", borderRadius:"50%", width:32, height:32, fontSize:18, cursor:"pointer", color:"#64748b" }}>✕</button>
 
         <div style={{ fontSize:big?72:viral?60:56, marginBottom:8, animation:big?"glow 1.5s infinite":undefined }}>
@@ -269,10 +277,23 @@ function ResultModal({ result, phone, onClose }) {
             <div style={{ fontSize:14, fontWeight:700, color:"#92400e", letterSpacing:1, marginBottom:4 }}>BẠN TRÚNG!</div>
             <div style={{ fontSize:22, fontWeight:900, color:"#1c1917", marginBottom:14 }}>{result.prize_name}</div>
             {code && code !== "PENDING" ? (
-              <div style={{ background:"linear-gradient(135deg,#fff7ed,#fef3c7)", border:"2px solid #f59e0b", borderRadius:14, padding:18, marginBottom:12 }}>
-                <div style={{ fontSize:11, color:"#92400e", fontWeight:700, letterSpacing:1, marginBottom:6 }}>MÃ VOUCHER CỦA BẠN</div>
-                <div style={{ fontSize:28, fontWeight:900, color:"#ea580c", letterSpacing:4, wordBreak:"break-all" }}>{code}</div>
-                <div style={{ fontSize:12, color:"#a16207", marginTop:6 }}>Đưa mã này cho nhân viên để nhận thưởng</div>
+              <>
+                {/* Voucher code box */}
+                <div style={{ background:"linear-gradient(135deg,#fff7ed,#fef3c7)", border:"2px solid #f59e0b", borderRadius:14, padding:"16px 18px", marginBottom:12 }}>
+                  <div style={{ fontSize:11, color:"#92400e", fontWeight:700, letterSpacing:1, marginBottom:8 }}>MÃ VOUCHER CỦA BẠN</div>
+                  <div style={{ fontSize:30, fontWeight:900, color:"#ea580c", letterSpacing:4, wordBreak:"break-all", marginBottom:4 }}>{code}</div>
+                </div>
+                {/* Instruction message */}
+                <div style={{ background:"#f0fdf4", border:"2px solid #10b981", borderRadius:12, padding:"13px 16px", fontSize:14, color:"#065f46", lineHeight:1.8, textAlign:"left" }}>
+                  🧋 Mã voucher của bạn là <strong style={{ color:"#ea580c", fontFamily:"monospace" }}>"{code}"</strong>.<br/>
+                  HSD là <strong>{hsd}</strong> <span style={{ fontSize:12, color:"#6b7280" }}>(30 ngày từ ngày up lên)</span>.<br/>
+                  <span style={{ fontSize:13, color:"#047857" }}>Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸</span>
+                </div>
+              </>
+            ) : code === "PENDING" ? (
+              <div style={{ background:"#fffbeb", border:"2px solid #f59e0b", borderRadius:12, padding:14, fontSize:14, color:"#92400e", lineHeight:1.7 }}>
+                ⏳ Hệ thống đang xử lý voucher của bạn.<br/>
+                Vui lòng đưa màn hình này cho nhân viên<br/>để nhận <strong>{result.prize_name}</strong> miễn phí!
               </div>
             ) : (
               <div style={{ background:"#f0fdf4", border:"2px solid #10b981", borderRadius:12, padding:14, fontSize:14, color:"#065f46", lineHeight:1.6 }}>
