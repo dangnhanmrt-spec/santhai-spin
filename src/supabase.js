@@ -235,15 +235,13 @@ export async function loadSettings() {
 }
 
 export async function saveSetting(key, value) {
-  // upsert: patch nếu tồn tại, insert nếu chưa có
-  const r = await fetch(`${SUPA_URL}/rest/v1/spin_settings?key=eq.${encodeURIComponent(key)}`, {
-    method: "PATCH", headers: H, body: JSON.stringify({ value: String(value) })
-  });
-  if (!r.ok) {
-    await fetch(`${SUPA_URL}/rest/v1/spin_settings`, {
-      method: "POST", headers: { ...H, Prefer: "return=minimal" },
-      body: JSON.stringify({ key, value: String(value) })
+  // Dùng upsert (POST + merge-duplicates) — tránh bug Supabase PATCH trả 204 khi 0 row
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_settings`, {
+      method: "POST",
+      headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ key, value: String(value) }),
     });
-  }
-  return true;
+    return r.ok;
+  } catch { return false; }
 }
