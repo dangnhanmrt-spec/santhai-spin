@@ -235,12 +235,12 @@ export async function loadSettings() {
 }
 
 export async function saveSetting(key, value) {
-  // Dùng upsert (POST + merge-duplicates) — tránh bug Supabase PATCH trả 204 khi 0 row
+  // Dùng RPC SECURITY DEFINER — bypass mọi permission/RLS issue
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_settings`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/upsert_setting`, {
       method: "POST",
-      headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ key, value: String(value) }),
+      headers: H,
+      body: JSON.stringify({ p_key: key, p_value: String(value) }),
     });
     return r.ok;
   } catch { return false; }
