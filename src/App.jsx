@@ -1157,9 +1157,14 @@ function AdminPage({ onBack }) {
             <button onClick={async()=>{
               setSettingsSaved("⏳ Đang lưu…");
               const entries = Object.entries(adminSettings);
-              await Promise.all(entries.map(([k,v])=>saveSetting(k,v)));
-              setSettingsSaved("✅ Đã lưu! Reload trang khách để thấy thay đổi.");
-              setTimeout(()=>setSettingsSaved(""),4000);
+              const results = await Promise.all(entries.map(([k,v])=>saveSetting(k,v)));
+              const allOk = results.every(Boolean);
+              if (allOk) {
+                setSettingsSaved("✅ Đã lưu! F5 trang khách để thấy thay đổi.");
+              } else {
+                setSettingsSaved("❌ Lưu thất bại — chạy schema_settings.sql trong Supabase chưa?");
+              }
+              setTimeout(()=>setSettingsSaved(""),6000);
             }} style={{ padding:"12px 28px",background:"linear-gradient(135deg,#f97316,#ea580c)",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer" }}>
               💾 Lưu cài đặt
             </button>
