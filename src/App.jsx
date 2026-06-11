@@ -120,7 +120,79 @@ const WHEEL_TEXT_COLORS = [
   '#FFFFFF','#FFFFFF','#1b459c','#1b459c',
 ];
 
-/* ─── WHEEL CANVAS ─── */
+/* ─── WHEEL IMAGE SPINNER ─── */
+function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl }) {
+  const rotRef = useRef(0);
+  const rafRef = useRef(null);
+  const [deg,  setDeg]    = useState(0);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!spinning || !winnerId || !prizes.length) return;
+    cancelAnimationFrame(rafRef.current);
+
+    const n = prizes.length;
+    const idx = prizes.findIndex(p => p.id === winnerId);
+    if (idx < 0) { onDone?.(); return; }
+
+    const segDeg = 360 / n;
+    // Center of winning segment (clockwise from 12 o'clock)
+    const prizeAngle = idx * segDeg + segDeg / 2;
+    // To bring prize to pointer (top): rotate CW by (360 - prizeAngle)
+    const base = ((360 - prizeAngle) % 360 + 360) % 360;
+    // Ensure at least 5 full rotations forward from current position
+    const minTarget = rotRef.current + 5 * 360;
+    const n2 = Math.ceil((minTarget - base) / 360);
+    const target = base + n2 * 360;
+
+    const from = rotRef.current, dur = 5000, t0 = performance.now();
+    const ease = t => 1 - Math.pow(1 - t, 4);
+
+    const frame = now => {
+      const t = Math.min(1, (now - t0) / dur);
+      const r = from + (target - from) * ease(t);
+      rotRef.current = r; setDeg(r);
+      if (t < 1) rafRef.current = requestAnimationFrame(frame);
+      else { rotRef.current = target; setDeg(target); onDone?.(); }
+    };
+    rafRef.current = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [spinning, winnerId]);
+
+  return (
+    <div style={{ position:"relative", width:size, height:size, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      {/* Pointer ▼ — cố định, không quay */}
+      <div style={{
+        position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)",
+        zIndex:10, width:0, height:0,
+        borderLeft:"13px solid transparent", borderRight:"13px solid transparent",
+        borderTop:`26px solid #e99849`,
+        filter:"drop-shadow(0 2px 5px rgba(0,0,0,.5))",
+      }}/>
+      {/* Wheel image — quay */}
+      {!loaded && (
+        <div style={{ width:size, height:size, borderRadius:"50%", background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:"#9ca3af" }}>
+          Đang tải...
+        </div>
+      )}
+      <img
+        src={imageUrl}
+        alt="vòng quay"
+        onLoad={() => setLoaded(true)}
+        style={{
+          width:size, height:size,
+          transform:`rotate(${deg}deg)`,
+          borderRadius:"50%",
+          display: loaded ? "block" : "none",
+          userSelect:"none",
+          WebkitUserDrag:"none",
+        }}
+      />
+    </div>
+  );
+}
+
+
 function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
   const ref    = useRef(null);
   const rotRef = useRef(0);
@@ -687,12 +759,23 @@ function CustomerPage({ onAdmin }) {
 
           {/* Wheel with optional frame overlay */}
           <div style={{ position:"relative", display:"inline-block" }}>
-            <WheelCanvas
-              prizes={prizes}
-              winnerId={currentPrize?.prize_id}
-              spinning={spinning}
-              onDone={handleSpinDone}
-              size={wheelSize}/>
+            {settings.wheel_image_url && settings.wheel_image_url.startsWith("http") ? (
+              <WheelImageSpinner
+                prizes={prizes}
+                winnerId={currentPrize?.prize_id}
+                spinning={spinning}
+                onDone={handleSpinDone}
+                size={wheelSize}
+                imageUrl={settings.wheel_image_url}
+              />
+            ) : (
+              <WheelCanvas
+                prizes={prizes}
+                winnerId={currentPrize?.prize_id}
+                spinning={spinning}
+                onDone={handleSpinDone}
+                size={wheelSize}/>
+            )}
             {settings.frame_image_url && settings.frame_image_url.startsWith("http") && (
               <img src={settings.frame_image_url} alt="" style={{
                 position:"absolute", inset:-10, width:"calc(100% + 20px)", height:"calc(100% + 20px)",
@@ -1055,8 +1138,8 @@ function AdminPage({ onBack }) {
   // Admin settings state
   const [adminSettings, setAdminSettings] = useState({
     event_name:"", event_subtitle:"", description:"",
-    show_prize_list:"false", bg_color:"#fff7ed",
-    bg_image_url:"", frame_image_url:""
+    show_prize_list:"false", bg_color:"#F5F0E8",
+    bg_image_url:"", frame_image_url:"", wheel_image_url:""
   });
   const [settingsSaved, setSettingsSaved] = useState(""); // null | "ok" | "error"
 
@@ -1265,7 +1348,8 @@ function AdminPage({ onBack }) {
               {key:"event_subtitle",  label:"Tagline / Phụ đề",      placeholder:"Vòng Quay May Mắn — Thất Kiếm Lệnh", type:"text", hint:"Dòng nhỏ dưới tên"},
               {key:"bg_color",        label:"Màu nền (nếu không dùng ảnh)", placeholder:"#fff7ed",              type:"color",    hint:""},
               {key:"bg_image_url",    label:"URL ảnh nền",           placeholder:"https://...",                    type:"url",      hint:"Để trống nếu dùng màu nền"},
-              {key:"frame_image_url", label:"URL ảnh khung vòng quay", placeholder:"https://... (PNG có trong suốt)", type:"url",  hint:"Overlay lên trên wheel — nên dùng PNG trong suốt"},
+              {key:"frame_image_url", label:"URL ảnh khung vòng quay (tùy chọn)", placeholder:"https://... (PNG trong suốt, chỉ phần viền)", type:"url", hint:"Overlay decorative lên vòng quay — nên dùng PNG trong suốt"},
+              {key:"wheel_image_url", label:"⭐ URL ảnh vòng quay tùy chỉnh", placeholder:"https://... (PNG/JPG, ảnh vòng quay đầy đủ)", type:"url", hint:"Nếu điền URL này → dùng ảnh thay vì vẽ canvas. Ô số 1 (ngay bên phải mũi tên 12 giờ) phải khớp với giải đầu tiên trong DB"},
             ].map(({key,label,placeholder,type,hint})=>(
               <div key={key} style={{ marginBottom:16 }}>
                 <label style={{ fontSize:13,fontWeight:700,display:"block",marginBottom:4,color:"#374151" }}>{label}</label>
