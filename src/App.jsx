@@ -95,18 +95,22 @@ const WHEEL_TEXT_COLORS = [
 
 /* ─── WHEEL IMAGE SPINNER ─── */
 function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl }) {
+  const imgRef    = useRef(null);
   const rotRef    = useRef(0);
   const rafRef    = useRef(null);
   const prizesRef = useRef(prizes);
-  const [deg,    setDeg]    = useState(0);
+  const onDoneRef = useRef(onDone);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => { prizesRef.current = prizes; }, [prizes]);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
   useEffect(() => {
     if (!spinning || !winnerId) return;
     const list = prizesRef.current;
     if (!list.length) return;
+    const img = imgRef.current;
+    if (!img) return;
     cancelAnimationFrame(rafRef.current);
 
     const n = list.length;
@@ -126,9 +130,14 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
     const frame = now => {
       const t = Math.min(1, (now - t0) / dur);
       const r = from + (target - from) * ease(t);
-      rotRef.current = r; setDeg(r);
+      rotRef.current = r;
+      img.style.transform = `rotate(${r}deg)`;
       if (t < 1) rafRef.current = requestAnimationFrame(frame);
-      else { rotRef.current = target; setDeg(target); onDone?.(); }
+      else {
+        rotRef.current = target;
+        img.style.transform = `rotate(${target}deg)`;
+        onDoneRef.current?.();
+      }
     };
     rafRef.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafRef.current);
@@ -145,8 +154,8 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
           Đang tải...
         </div>
       )}
-      <img src={imageUrl} alt="vòng quay" onLoad={() => setLoaded(true)} draggable={false}
-        style={{ width:size, height:size, transform:`rotate(${deg}deg)`, borderRadius:"50%",
+      <img ref={imgRef} src={imageUrl} alt="vòng quay" onLoad={() => setLoaded(true)} draggable={false}
+        style={{ width:size, height:size, borderRadius:"50%", transformOrigin:"center center",
           display:loaded?"block":"none", userSelect:"none", WebkitUserDrag:"none", willChange:"transform" }}/>
     </div>
   );
