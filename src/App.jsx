@@ -126,83 +126,175 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
   const rotRef = useRef(0);
   const rafRef = useRef(null);
 
+  // Màu riêng cho 3 giải đặc biệt (theo prize_type)
+  const SEG_COLORS = {
+    special_30: { bg:"#CC2136", badge:"#8B0000", text:"#FFD700" }, // Thẻ 30 ngày — đỏ thẫm
+    special_15: { bg:"#1b459c", badge:"#0D2D6B", text:"#FFD700" }, // Thẻ 15 ngày — navy
+    viral:      { bg:"#64748b", badge:"#374151", text:"#FFFFFF" }, // Mất Lượt — xám
+    normal:     { bg:null,      badge:"#CC2136", text:"#FFFFFF" }, // Vàng gradient, badge đỏ
+  };
+
   const segs = prizes.map((p, i) => {
     const sweep = (2 * Math.PI) / prizes.length;
     const start = -Math.PI / 2 + i * sweep;
-    return { ...p, sweep, start, mid: start + sweep / 2,
-      color: WHEEL_COLORS[i % WHEEL_COLORS.length],
-      textColor: WHEEL_TEXT_COLORS[i % WHEEL_TEXT_COLORS.length] };
+    // Xác định loại segment
+    let segType = "normal";
+    if (p.prize_type === "viral") segType = "viral";
+    else if (p.prize_type === "special") {
+      // Phân biệt 30 ngày vs 15 ngày bằng tên
+      segType = (p.name||"").includes("30") ? "special_30" : "special_15";
+    }
+    return { ...p, sweep, start, mid: start + sweep / 2, segType };
   });
+
+  // Helper: vẽ rounded rect
+  const rrect = (ctx, x, y, w, h, r) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y,     x + w, y + r,     r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x,     y + h, x,     y + h - r, r);
+    ctx.lineTo(x,     y + r);
+    ctx.arcTo(x,     y,     x + r, y,          r);
+    ctx.closePath();
+  };
 
   const draw = useCallback((rot) => {
     const c = ref.current; if (!c || segs.length === 0) return;
-    const ctx = c.getContext("2d"), W = c.width, cx = W/2, cy = W/2, R = W/2 - 6;
+    const ctx = c.getContext("2d"), W = c.width, cx = W/2, cy = W/2;
+    const outerR = W/2 - 2;  // full outer
+    const ringW  = Math.max(10, W * 0.045); // navy ring width
+    const R      = outerR - ringW - 4;      // segment radius
     ctx.clearRect(0, 0, W, W);
 
-    // Outer ring
-    ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, 2*Math.PI);
-    ctx.fillStyle = "#fff"; ctx.fill();
-    ctx.strokeStyle = var_gold(); ctx.lineWidth = 6; ctx.stroke();
+    // ── 1. Outer navy ring ──
+    ctx.beginPath(); ctx.arc(cx, cy, outerR, 0, 2*Math.PI);
+    const navyGrad = ctx.createRadialGradient(cx - outerR*0.25, cy - outerR*0.25, 0, cx, cy, outerR);
+    navyGrad.addColorStop(0, "#2a5cc4");
+    navyGrad.addColorStop(0.6, "#1b459c");
+    navyGrad.addColorStop(1, "#0d2d6b");
+    ctx.fillStyle = navyGrad; ctx.fill();
 
-    segs.forEach(({ start, sweep, color, textColor, icon, short_name, name }) => {
+    // ── 2. Gold accent ring just inside navy ──
+    ctx.beginPath(); ctx.arc(cx, cy, R + 6, 0, 2*Math.PI);
+    const goldRing = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+    goldRing.addColorStop(0, "#FFE566"); goldRing.addColorStop(0.5, "#e99849"); goldRing.addColorStop(1, "#FFE566");
+    ctx.fillStyle = goldRing; ctx.fill();
+
+    // ── 3. Yellow gradient base disk (for normal segments) ──
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2*Math.PI);
+    const yellowBase = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    yellowBase.addColorStop(0,   "#FFE84A");
+    yellowBase.addColorStop(0.5, "#FFD020");
+    yellowBase.addColorStop(1,   "#FF9500");
+    ctx.fillStyle = yellowBase; ctx.fill();
+    ctx.restore();
+
+    // ── 4. Special/viral segments (overlay solid color on top of yellow base) ──
+    segs.forEach(({ start, sweep, segType }) => {
+      if (segType === "normal") return;
       const s = start + rot, e = s + sweep;
-      // Segment
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, s, e); ctx.closePath();
-      ctx.fillStyle = color; ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 2; ctx.stroke();
-
-      if (sweep < 0.05) return; // ô quá nhỏ, bỏ qua
-
-      const mid = start + rot + sweep / 2;
-      const hR  = R * 0.18; // rìa trong (hub)
-      // Font size giới hạn bởi chiều rộng ô tại bán kính giữa
-      const segWidthAtMid = 2 * (R * 0.5) * Math.sin(sweep / 2);
-      const fs = Math.max(7, Math.min(12, segWidthAtMid * 0.28));
-
+      const col = SEG_COLORS[segType];
       ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(mid); // xoay theo hướng tâm (radial)
-
-      const tc = textColor || "#fff";
-      ctx.fillStyle = tc;
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = "rgba(0,0,0,.25)";
-      ctx.shadowBlur = 2;
-
-      // Icon — gần viền ngoài
-      ctx.textAlign = "center";
-      ctx.font = `${Math.max(10, Math.min(15, segWidthAtMid * 0.35))}px sans-serif`;
-      ctx.fillText(icon || "🎁", R * 0.82, 0);
-
-      // Label — từ gần hub ra ngoài
-      const label = short_name || name;
-      ctx.font = `700 ${fs}px Arial,sans-serif`;
-      ctx.textAlign = "left";
-      ctx.fillText(label, hR + 4, 0);
-
-      ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, s, e); ctx.closePath();
+      ctx.fillStyle = col.bg; ctx.fill();
       ctx.restore();
     });
 
-    // Center hub — mèo cam 🐱
-    const hR = R * 0.13;
-    ctx.beginPath(); ctx.arc(cx, cy, hR + 4, 0, 2*Math.PI);
-    ctx.fillStyle = "#fff"; ctx.fill();
-    ctx.beginPath(); ctx.arc(cx, cy, hR + 1, 0, 2*Math.PI);
-    ctx.fillStyle = "#e99849"; ctx.fill();
-    ctx.font = `${Math.round(hR * 1.3)}px sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("🐱", cx, cy);
+    // ── 5. Segment divider lines ──
+    ctx.save();
+    segs.forEach(({ start }) => {
+      const angle = start + rot;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + R * Math.cos(angle), cy + R * Math.sin(angle));
+      ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    ctx.restore();
 
-    // Pointer ▼
-    ctx.save(); ctx.translate(cx, 4);
-    ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(-13, -2); ctx.lineTo(13, -2); ctx.closePath();
-    ctx.fillStyle = "#e99849";
-    ctx.shadowColor = "#e99849"; ctx.shadowBlur = 14;
-    ctx.fill(); ctx.restore();
+    // ── 6. Text badges (radial direction) ──
+    segs.forEach(({ start, sweep, segType, short_name, name }) => {
+      if (sweep < 0.05) return;
+      const mid = start + rot + sweep / 2;
+      const col = SEG_COLORS[segType];
+
+      const label = (short_name || name || "").toUpperCase();
+      if (!label) return;
+
+      // Adaptive font size based on segment width and label length
+      const segW = 2 * R * 0.58 * Math.sin(sweep / 2);
+      const fs   = Math.max(6.5, Math.min(10.5, segW * 0.38 - label.length * 0.12));
+      ctx.font    = `800 ${fs}px Arial,sans-serif`;
+      const tw    = ctx.measureText(label).width;
+      const padX  = 5, padY = 3;
+      const bW    = tw + padX * 2;
+      const bH    = fs + padY * 2;
+
+      // Position badge center at ~62% of radius
+      const bCx = R * 0.58;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(mid);
+
+      // Badge fill
+      rrect(ctx, bCx - bW/2, -bH/2, bW, bH, 3);
+      ctx.fillStyle = col.badge;
+      ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 3;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Thin white border
+      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 0.8; ctx.stroke();
+
+      // Text
+      ctx.fillStyle = col.text;
+      ctx.textAlign  = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, bCx, 0);
+
+      ctx.restore();
+    });
+
+    // ── 7. Center hub (chrome ring + blue ball) ──
+    const hubR = Math.max(14, R * 0.13);
+    // Chrome outer ring
+    const chromeGrad = ctx.createRadialGradient(cx - hubR*0.3, cy - hubR*0.3, 1, cx, cy, hubR + 8);
+    chromeGrad.addColorStop(0, "#f0f0f0");
+    chromeGrad.addColorStop(0.35, "#c8c8c8");
+    chromeGrad.addColorStop(0.7, "#888888");
+    chromeGrad.addColorStop(1, "#aaaaaa");
+    ctx.beginPath(); ctx.arc(cx, cy, hubR + 8, 0, 2*Math.PI);
+    ctx.fillStyle = chromeGrad; ctx.fill();
+    // Inner shadow ring
+    ctx.beginPath(); ctx.arc(cx, cy, hubR + 3, 0, 2*Math.PI);
+    ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fill();
+    // Blue sphere
+    const blueGrad = ctx.createRadialGradient(cx - hubR*0.35, cy - hubR*0.35, 0, cx, cy, hubR);
+    blueGrad.addColorStop(0, "#6BAAFF");
+    blueGrad.addColorStop(0.4, "#1b65d4");
+    blueGrad.addColorStop(1, "#0a2a6e");
+    ctx.beginPath(); ctx.arc(cx, cy, hubR, 0, 2*Math.PI);
+    ctx.fillStyle = blueGrad; ctx.fill();
+    // Specular highlight
+    ctx.beginPath(); ctx.arc(cx - hubR*0.28, cy - hubR*0.3, hubR*0.28, 0, 2*Math.PI);
+    ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fill();
+
+    // ── 8. Pointer ▼ ──
+    ctx.save(); ctx.translate(cx, 5);
+    ctx.beginPath(); ctx.moveTo(0, 17); ctx.lineTo(-11, -1); ctx.lineTo(11, -1); ctx.closePath();
+    const pGrad = ctx.createLinearGradient(0, -1, 0, 17);
+    pGrad.addColorStop(0, "#FFE566"); pGrad.addColorStop(1, "#e99849");
+    ctx.fillStyle = pGrad;
+    ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.strokeStyle = "#CC8020"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
   }, [segs]);
-
-  function var_gold() { return "#e99849"; }
 
   useEffect(() => { draw(0); }, [draw]);
 
