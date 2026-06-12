@@ -95,199 +95,256 @@ const WHEEL_TEXT_COLORS = [
   '#FFFFFF','#FFFFFF','#1b459c','#1b459c',
 ];
 
-/* ─── WHEEL IMAGE SPINNER (Canvas Highlight-Chase) ─── */
+/* ─── WHEEL IMAGE SPINNER (4-Layer Architecture) ─── */
 function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl }) {
-  const hlRef     = useRef(null);   // canvas overlay
-  const imgRef    = useRef(null);   // wheel image
+  const segRef    = useRef(null);   // Layer 2: segments
+  const hlRef     = useRef(null);   // Layer 3: highlight
   const rafRef    = useRef(null);
   const prizesRef = useRef(prizes);
   const onDoneRef = useRef(onDone);
-  const hlState   = useRef({ idx:-1, landed:false }); // mutable, avoid re-render
+  const hlIdxRef  = useRef(0);      // mutable — highlight luôn bắt đầu ở ô 0
+  const landedRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
+  const [, forceUpdate] = useState(0); // trigger re-draw khi prizes thay đổi
 
-  useEffect(() => { prizesRef.current = prizes; }, [prizes]);
+  useEffect(() => { prizesRef.current = prizes; forceUpdate(v=>v+1); }, [prizes]);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
-  /* ── Draw highlight on canvas ── */
+  const dpr = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
+  const cx = size/2, cy = size/2;
+  const outerR = size * 0.465;  // bán kính vùng giải (vừa trong viền frame)
+  const hubR   = size * 0.125;  // bán kính nút tâm
+
+  /* ═══════ Layer 2: Vẽ segments ═══════ */
+  const drawSegments = useCallback(() => {
+    const c = segRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,size,size);
+
+    const list = prizesRef.current;
+    const n = list.length; if (!n) return;
+    const sweep = (2*Math.PI)/n;
+
+    /* Segment fills — xen kẽ 2 tone vàng */
+    const FILLS = ["rgba(255,220,80,0.35)","rgba(255,200,50,0.15)"];
+    const SEG_SPECIAL = {
+      special_30:"#CC2136", special_15:"#1b459c", viral:"#64748b"
+    };
+
+    list.forEach((p,i) => {
+      const start = -Math.PI/2 + i*sweep;
+      const end   = start + sweep;
+
+      /* Fill */
+      let segType = "normal";
+      if (p.prize_type==="viral") segType="viral";
+      else if (p.prize_type==="special") segType=(p.name||"").includes("30")?"special_30":"special_15";
+
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,start,end); ctx.closePath();
+      ctx.fillStyle = SEG_SPECIAL[segType] || FILLS[i%2];
+      ctx.fill();
+
+      /* Divider line */
+      ctx.beginPath(); ctx.moveTo(cx,cy);
+      ctx.lineTo(cx+outerR*Math.cos(start), cy+outerR*Math.sin(start));
+      ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+
+    /* Badges (text labels) */
+    list.forEach((p,i) => {
+      const start = -Math.PI/2 + i*sweep;
+      const mid   = start + sweep/2;
+      const label = (p.short_name||p.name||"").toUpperCase();
+      if (!label) return;
+
+      const segW  = 2*outerR*0.6*Math.sin(sweep/2);
+      const fs    = Math.max(7, Math.min(11.5, segW*0.36 - label.length*0.1));
+      ctx.font    = `800 ${fs}px Arial,sans-serif`;
+      const tw    = ctx.measureText(label).width;
+      const padX=5, padY=3, bW=tw+padX*2, bH=fs+padY*2;
+      const bDist = outerR*0.6;
+
+      let segType = "normal";
+      if (p.prize_type==="viral") segType="viral";
+      else if (p.prize_type==="special") segType=(p.name||"").includes("30")?"special_30":"special_15";
+      const badgeBg  = SEG_SPECIAL[segType] || "#CC2136";
+      const badgeText = segType==="normal" ? "#FFFFFF" : "#FFD700";
+
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(mid);
+      /* Badge rect */
+      const bx=bDist-bW/2, by=-bH/2;
+      ctx.beginPath();
+      ctx.moveTo(bx+3,by); ctx.lineTo(bx+bW-3,by);
+      ctx.arcTo(bx+bW,by,bx+bW,by+3,3); ctx.lineTo(bx+bW,by+bH-3);
+      ctx.arcTo(bx+bW,by+bH,bx+bW-3,by+bH,3); ctx.lineTo(bx+3,by+bH);
+      ctx.arcTo(bx,by+bH,bx,by+bH-3,3); ctx.lineTo(bx,by+3);
+      ctx.arcTo(bx,by,bx+3,by,3); ctx.closePath();
+      ctx.fillStyle=badgeBg; ctx.shadowColor="rgba(0,0,0,.35)"; ctx.shadowBlur=3; ctx.fill();
+      ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=0.8; ctx.stroke();
+      /* Text */
+      ctx.fillStyle=badgeText; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(label,bDist,0);
+      ctx.restore();
+    });
+  }, [size, dpr, cx, cy, outerR]);
+
+  /* ═══════ Layer 3: Vẽ highlight ═══════ */
   const drawHL = useCallback((idx, isLanded) => {
     const c = hlRef.current;
     if (!c) return;
     const ctx = c.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
-    const W = size;
-    const cx = W / 2, cy = W / 2;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, W);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,size,size);
 
     const n = prizesRef.current.length || 1;
-    if (idx < 0 || idx >= n) {
-      /* Idle: chấm cam nhỏ ở đỉnh 12h */
-      ctx.beginPath();
-      ctx.arc(cx, W * 0.1, 5, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(233,152,73,0.7)";
-      ctx.fill();
-      return;
-    }
+    if (idx < 0 || idx >= n) return;
 
-    const segAngle = (2 * Math.PI) / n;
-    const startA = -Math.PI / 2 + idx * segAngle;
-    const endA   = startA + segAngle;
-    const R = W * 0.43; // khớp với viền ảnh (~86% bán kính)
+    const sweep  = (2*Math.PI)/n;
+    const startA = -Math.PI/2 + idx*sweep;
+    const endA   = startA + sweep;
 
-    /* Vẽ hình quạt highlight */
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, R, startA, endA);
-    ctx.closePath();
+    /* Hình quạt highlight */
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,startA,endA); ctx.closePath();
 
     if (isLanded) {
-      ctx.fillStyle = "rgba(255,200,0,0.55)";
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fill();
-      ctx.strokeStyle = "#FFD700";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      /* Glow edge */
-      ctx.shadowColor = "rgba(255,200,0,0.6)";
-      ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 3;
+      ctx.shadowColor = "rgba(255,200,0,0.7)"; ctx.shadowBlur = 15;
+      ctx.stroke(); ctx.shadowBlur = 0;
     } else {
-      ctx.fillStyle = "rgba(50,100,255,0.45)";
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
       ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,215,0,0.85)"; ctx.lineWidth = 2;
       ctx.stroke();
     }
-  }, [size]);
+  }, [size, dpr, cx, cy, outerR]);
 
-  /* ── Init canvas size ── */
+  /* ═══════ Init canvases ═══════ */
   useEffect(() => {
-    const c = hlRef.current;
-    if (!c) return;
-    const dpr = window.devicePixelRatio || 1;
-    c.width  = size * dpr;
-    c.height = size * dpr;
-    if (loaded) drawHL(-1, false);
-  }, [size, loaded, drawHL]);
+    [segRef, hlRef].forEach(ref => {
+      const c = ref.current; if (!c) return;
+      c.width = size*dpr; c.height = size*dpr;
+    });
+    drawSegments();
+    drawHL(0, false);  // highlight ô đầu tiên ngay khi load
+  }, [size, dpr, drawSegments, drawHL]);
 
-  /* ── Chase animation ── */
+  /* Re-draw segments khi prizes thay đổi */
+  useEffect(() => { drawSegments(); drawHL(hlIdxRef.current, landedRef.current); }, [drawSegments, drawHL]);
+
+  /* ═══════ Chase animation ═══════ */
   useEffect(() => {
     if (!spinning || !winnerId) return;
     const list = prizesRef.current;
-    const n = list.length;
-    if (!n) return;
+    const n = list.length; if (!n) return;
 
-    cancelAnimationFrame(rafRef.current);
-    hlState.current = { idx: 0, landed: false };
-    drawHL(0, false);
+    cancelAnimationFrame(rafRef.current); clearTimeout(rafRef.current);
+    landedRef.current = false;
 
-    const winIdx = list.findIndex(p => String(p.id) === String(winnerId));
-    const targetIdx = winIdx < 0 ? Math.floor(Math.random() * n) : winIdx;
+    const winIdx = list.findIndex(p => String(p.id)===String(winnerId));
+    const targetIdx = winIdx<0 ? Math.floor(Math.random()*n) : winIdx;
 
     const fullLaps   = 4;
-    const totalSteps = n * fullLaps + targetIdx;
+    const totalSteps = n*fullLaps + targetIdx;
     const dur        = 5000;
     const t0         = performance.now();
     let lastStep     = -1;
 
     const frame = () => {
-      const elapsed  = performance.now() - t0;
-      const progress = Math.min(1, elapsed / dur);
-      const eased = 1 - Math.pow(1 - progress, 4);
-      const step  = Math.floor(eased * totalSteps);
+      const elapsed = performance.now()-t0;
+      const progress = Math.min(1, elapsed/dur);
+      const eased = 1 - Math.pow(1-progress, 4);
+      const step  = Math.floor(eased*totalSteps);
 
       if (step !== lastStep) {
         lastStep = step;
         const idx = step % n;
-        hlState.current.idx = idx;
+        hlIdxRef.current = idx;
         drawHL(idx, false);
       }
-
-      if (progress < 1) {
+      if (progress<1) {
         rafRef.current = requestAnimationFrame(frame);
       } else {
-        hlState.current = { idx: targetIdx, landed: true };
+        hlIdxRef.current = targetIdx;
+        landedRef.current = true;
         drawHL(targetIdx, true);
-        /* Pulse landed 3 lần */
-        let pulseCount = 0;
+        /* Pulse 3 lần */
+        let pc=0;
         const pulse = () => {
-          pulseCount++;
-          const on = pulseCount % 2 === 0;
+          pc++;
           drawHL(targetIdx, true);
-          if (on) {
-            const c = hlRef.current;
-            if (c) {
-              const ctx = c.getContext("2d");
-              const dpr = window.devicePixelRatio || 1;
-              ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-              ctx.globalAlpha = 0.3;
-              const segAngle = (2 * Math.PI) / n;
-              const startA = -Math.PI / 2 + targetIdx * segAngle;
-              const endA = startA + segAngle;
-              const R = size * 0.43;
-              ctx.beginPath();
-              ctx.moveTo(size/2, size/2);
-              ctx.arc(size/2, size/2, R, startA, endA);
-              ctx.closePath();
-              ctx.fillStyle = "#fff";
-              ctx.fill();
-              ctx.globalAlpha = 1;
+          if (pc%2===0) {
+            const ctx2 = hlRef.current?.getContext("2d");
+            if (ctx2) {
+              ctx2.setTransform(dpr,0,0,dpr,0,0);
+              ctx2.globalAlpha=0.25;
+              ctx2.beginPath(); ctx2.moveTo(cx,cy);
+              ctx2.arc(cx,cy,outerR,-Math.PI/2+targetIdx*(2*Math.PI/n),-Math.PI/2+(targetIdx+1)*(2*Math.PI/n));
+              ctx2.closePath();
+              ctx2.fillStyle="#FFD700"; ctx2.fill();
+              ctx2.globalAlpha=1;
             }
           }
-          if (pulseCount < 6) {
-            rafRef.current = setTimeout(pulse, 200);
-          } else {
-            drawHL(targetIdx, true);
-            setTimeout(() => onDoneRef.current?.(), 300);
-          }
+          if (pc<6) rafRef.current=setTimeout(pulse,180);
+          else { drawHL(targetIdx,true); setTimeout(()=>onDoneRef.current?.(),300); }
         };
-        rafRef.current = setTimeout(pulse, 200);
+        rafRef.current=setTimeout(pulse,180);
       }
     };
     rafRef.current = requestAnimationFrame(frame);
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      clearTimeout(rafRef.current);
-    };
-  }, [spinning, winnerId, drawHL]); // eslint-disable-line
+    return () => { cancelAnimationFrame(rafRef.current); clearTimeout(rafRef.current); };
+  }, [spinning, winnerId, drawHL, cx, cy, outerR, dpr]); // eslint-disable-line
 
-  /* Reset khi hết lượt quay */
+  /* Reset về ô 0 khi hết session quay */
   useEffect(() => {
     if (!winnerId && !spinning) {
-      hlState.current = { idx: -1, landed: false };
-      if (loaded) drawHL(-1, false);
+      hlIdxRef.current = 0; landedRef.current = false;
+      drawHL(0, false);
     }
-  }, [winnerId, spinning, loaded, drawHL]);
-
-  /* ── Pointer (tam giác cam) ── */
-  const Pointer = () => (
-    <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:20,
-      width:0, height:0, borderLeft:"13px solid transparent", borderRight:"13px solid transparent",
-      borderTop:"26px solid #e99849", filter:"drop-shadow(0 2px 5px rgba(0,0,0,.5))" }}/>
-  );
+  }, [winnerId, spinning, drawHL]);
 
   return (
     <div style={{ position:"relative", width:size, height:size }}>
-      <Pointer/>
+      {/* Pointer */}
+      <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:30,
+        width:0, height:0, borderLeft:"14px solid transparent", borderRight:"14px solid transparent",
+        borderTop:"28px solid #e99849", filter:"drop-shadow(0 2px 6px rgba(0,0,0,.5))" }}/>
+
+      {/* Loading */}
       {!loaded && (
         <div style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", borderRadius:"50%",
           background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:14, color:"#9ca3af", zIndex:1 }}>
-          Đang tải...
-        </div>
+          fontSize:14, color:"#9ca3af", zIndex:1 }}>Đang tải...</div>
       )}
 
-      {/* Ảnh bánh xe — tĩnh */}
-      <img ref={imgRef} src={imageUrl} alt="vòng quay"
-        onLoad={() => setLoaded(true)} draggable={false}
+      {/* Layer 1: Ảnh nền + viền bánh xe */}
+      <img src={imageUrl} alt="" onLoad={()=>setLoaded(true)} draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-          borderRadius:"50%", objectFit:"contain",
+          borderRadius:"50%", objectFit:"contain", zIndex:2,
           display:loaded?"block":"none", userSelect:"none" }}/>
 
-      {/* Canvas highlight overlay — cùng kỹ thuật WheelCanvas đã chạy tốt */}
+      {/* Layer 2: Segments canvas (chia ngăn + text giải thưởng) */}
+      <canvas ref={segRef}
+        style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
+          pointerEvents:"none", zIndex:10 }}/>
+
+      {/* Layer 3: Highlight-chase canvas */}
       <canvas ref={hlRef}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-          pointerEvents:"none", borderRadius:"50%", zIndex:10 }}/>
+          pointerEvents:"none", zIndex:15 }}/>
+
+      {/* Layer 4: Nút tâm */}
+      <div style={{
+        position:"absolute", zIndex:20,
+        left:cx-hubR, top:cy-hubR, width:hubR*2, height:hubR*2,
+        borderRadius:"50%",
+        background:"radial-gradient(circle at 35% 35%, #6BAAFF 0%, #1b65d4 40%, #0a2a6e 100%)",
+        boxShadow:"0 0 0 4px rgba(200,200,200,.6), 0 0 0 8px rgba(100,100,100,.25), 0 4px 12px rgba(0,0,0,.3)",
+        cursor:"default"
+      }}/>
     </div>
   );
 }
@@ -1078,7 +1135,7 @@ function AdminPage({ onBack }) {
               {key:"event_subtitle",  label:"Tagline / Phụ đề",   placeholder:"Vòng Quay May Mắn — Thất Kiếm Lệnh",type:"text",hint:"Dòng nhỏ dưới tên"},
               {key:"bg_color",        label:"Màu nền (nếu không dùng ảnh)",placeholder:"#F5F0E8",type:"color",hint:""},
               {key:"bg_image_url",    label:"URL ảnh nền",         placeholder:"https://...",type:"url",hint:"Để trống nếu dùng màu nền"},
-              {key:"wheel_image_url", label:"⭐ URL ảnh vòng quay tùy chỉnh",placeholder:"https://... (PNG/JPG vòng quay đầy đủ)",type:"url",hint:"Nếu điền → dùng ảnh thay vì canvas. Ô số 1 (ngay bên phải mũi tên 12h, chiều CW) phải khớp giải đầu tiên trong DB"},
+              {key:"wheel_image_url", label:"⭐ URL ảnh nền vòng quay",placeholder:"https://... (PNG/JPG chỉ viền + nền, KHÔNG có text giải)",type:"url",hint:"Layer 1: chỉ viền + nền. Giải thưởng + highlight + nút tâm được code tự vẽ lên trên"},
               {key:"frame_image_url", label:"URL ảnh khung vòng quay (tùy chọn)",placeholder:"https://... (PNG trong suốt, chỉ phần viền)",type:"url",hint:"Overlay decorative lên vòng quay"},
             ].map(({key,label,placeholder,type,hint})=>(
               <div key={key} style={{marginBottom:16}}>
