@@ -1077,7 +1077,20 @@ function AdminPage({ onBack }) {
       ]);
       setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
       setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
-      setVouchers(Array.isArray(v)?v:[]);
+      /* Aggregate vouchers by prize */
+      if (Array.isArray(v)&&v.length>0) {
+        const map = {};
+        v.forEach(r => {
+          const k = r.prize_id;
+          if (!map[k]) map[k] = { prize_id:k, prize_name:r.prize_name, total:0, assigned:0, redeemed:0, voided:0 };
+          if (r.status==="unused")    map[k].total++;
+          else if (r.status==="assigned") map[k].assigned++;
+          else if (r.status==="redeemed") map[k].redeemed++;
+          else if (r.status==="voided")   map[k].voided++;
+          else map[k].total++; // fallback
+        });
+        setVouchers(Object.values(map));
+      } else { setVouchers([]); }
       if(cfg&&Object.keys(cfg).length) setAdminSettings(prev=>({...prev,...cfg}));
     }
     setLoading(false);
