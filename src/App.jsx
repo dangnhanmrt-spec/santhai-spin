@@ -119,7 +119,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
     const winIdx = list.findIndex(p => String(p.id) === String(winnerId));
     const targetIdx = winIdx < 0 ? Math.floor(Math.random() * n) : winIdx;
 
-    /* 4 vòng đầy + dừng ở targetIdx */
     const fullLaps   = 4;
     const totalSteps = n * fullLaps + targetIdx;
     const dur        = 5000;
@@ -129,7 +128,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
     const frame = () => {
       const elapsed  = performance.now() - t0;
       const progress = Math.min(1, elapsed / dur);
-      /* ease-out quartic — nhanh rồi chậm dần */
       const eased = 1 - Math.pow(1 - progress, 4);
       const step  = Math.floor(eased * totalSteps);
 
@@ -147,7 +145,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
     return () => cancelAnimationFrame(rafRef.current);
   }, [spinning, winnerId]); // eslint-disable-line
 
-  /* Reset khi hết lượt quay (winnerId trở về null/undefined) */
+  /* Reset khi hết lượt quay */
   useEffect(() => {
     if (!winnerId && !spinning) { setHlIdx(-1); setLanded(false); }
   }, [winnerId, spinning]);
@@ -156,7 +154,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
   const n = prizes.length || 1;
   const seg = 360 / n;
   const R = 50, cx = 50, cy = 50;
-  /* clipR = bán kính vùng highlight, nhỏ hơn ảnh gốc để tránh tràn ra viền */
   const clipR = 43;
 
   const piePath = (idx) => {
@@ -168,49 +165,62 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
   };
 
   return (
-    <div style={{ position:"relative", width:size, height:size, display:"flex", alignItems:"center", justifyContent:"center" }}>
-      {/* Pointer tam giác */}
-      <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:10,
+    <div style={{ position:"relative", width:size, height:size }}>
+      {/* Pointer — z cao nhất */}
+      <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:20,
         width:0, height:0, borderLeft:"13px solid transparent", borderRight:"13px solid transparent",
         borderTop:"26px solid #e99849", filter:"drop-shadow(0 2px 5px rgba(0,0,0,.5))" }}/>
 
       {/* Loading */}
       {!loaded && (
-        <div style={{ width:size, height:size, borderRadius:"50%", background:"#f3f4f6",
-          display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:"#9ca3af" }}>
+        <div style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", borderRadius:"50%",
+          background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
+          fontSize:14, color:"#9ca3af", zIndex:1 }}>
           Đang tải...
         </div>
       )}
 
-      {/* Ảnh bánh xe — TĨNH, không xoay */}
+      {/* Ảnh bánh xe — z thấp */}
       <img src={imageUrl} alt="vòng quay" onLoad={() => setLoaded(true)} draggable={false}
-        style={{ width:size, height:size, borderRadius:"50%",
+        style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
+          borderRadius:"50%", zIndex:2, objectFit:"contain",
           display:loaded?"block":"none", userSelect:"none", WebkitUserDrag:"none" }}/>
 
-      {/* SVG Highlight overlay */}
-      {loaded && hlIdx >= 0 && (
-        <svg viewBox="0 0 100 100" style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5 }}>
+      {/* SVG Highlight overlay — z cao hơn ảnh */}
+      {loaded && (
+        <svg viewBox="0 0 100 100"
+          style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
+            pointerEvents:"none", zIndex:15 }}>
           <defs>
             <clipPath id="hlClip"><circle cx={cx} cy={cy} r={clipR}/></clipPath>
             <filter id="hlGlow">
-              <feGaussianBlur stdDeviation="2" result="b"/>
+              <feGaussianBlur stdDeviation="2.5" result="b"/>
               <feComposite in="SourceGraphic" in2="b" operator="over"/>
             </filter>
           </defs>
-          <g clipPath="url(#hlClip)">
-            <path d={piePath(hlIdx)}
-              fill={landed ? "rgba(255,200,0,0.5)" : "rgba(59,130,246,0.38)"}
-              stroke={landed ? "#FFD700" : "rgba(255,255,255,0.85)"}
-              strokeWidth={landed ? "1.2" : "0.7"}
-              filter={landed ? "url(#hlGlow)" : undefined}
-              style={landed ? { animation:"hl-pulse .8s ease-in-out infinite" } : undefined}
-            />
-            {/* Border glow cho ô đang sáng */}
-            {!landed && (
+
+          {hlIdx >= 0 ? (
+            <g clipPath="url(#hlClip)">
+              {/* Ô sáng chính */}
               <path d={piePath(hlIdx)}
-                fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.4"/>
-            )}
-          </g>
+                fill={landed ? "rgba(255,180,0,0.55)" : "rgba(50,100,255,0.48)"}
+                stroke={landed ? "#FFD700" : "rgba(255,255,255,0.95)"}
+                strokeWidth={landed ? "1.5" : "1"}
+                filter={landed ? "url(#hlGlow)" : undefined}
+                style={landed ? { animation:"hl-pulse .8s ease-in-out infinite" } : undefined}
+              />
+              {/* Viền sáng phụ */}
+              <path d={piePath(hlIdx)}
+                fill="none"
+                stroke={landed ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)"}
+                strokeWidth="0.5"
+              />
+            </g>
+          ) : (
+            /* Idle: chấm sáng nhỏ ở đỉnh 12h để confirm SVG hoạt động */
+            <circle cx={cx} cy={cy - clipR + 3} r="2.5"
+              fill="rgba(233,152,73,0.6)" style={{ animation:"hl-pulse 2s ease-in-out infinite" }}/>
+          )}
         </svg>
       )}
     </div>
@@ -650,7 +660,7 @@ function CustomerPage({ onAdmin }) {
                 spinning={spinning} onDone={handleSpinDone} size={wheelSize}/>
             )}
             {settings.frame_image_url&&settings.frame_image_url.startsWith("http")&&(
-              <img src={settings.frame_image_url} alt="" style={{position:"absolute",inset:-10,width:"calc(100% + 20px)",height:"calc(100% + 20px)",pointerEvents:"none",objectFit:"contain"}}/>
+              <img src={settings.frame_image_url} alt="" style={{position:"absolute",inset:-10,width:"calc(100% + 20px)",height:"calc(100% + 20px)",pointerEvents:"none",objectFit:"contain",zIndex:5}}/>
             )}
           </div>
 
