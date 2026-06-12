@@ -95,216 +95,193 @@ const WHEEL_TEXT_COLORS = [
   '#FFFFFF','#FFFFFF','#1b459c','#1b459c',
 ];
 
-/* ─── WHEEL IMAGE SPINNER (4-Layer Architecture) ─── */
-function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl }) {
-  const segRef    = useRef(null);   // Layer 2: segments
-  const hlRef     = useRef(null);   // Layer 3: highlight
+/* ─── WHEEL IMAGE SPINNER (5-Layer Architecture) ─── */
+function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings }) {
+  const segRef    = useRef(null);   // L2: segments
+  const hlRef     = useRef(null);   // L4: highlight
   const rafRef    = useRef(null);
   const prizesRef = useRef(prizes);
   const onDoneRef = useRef(onDone);
-  const hlIdxRef  = useRef(0);      // mutable — highlight luôn bắt đầu ở ô 0
+  const hlIdxRef  = useRef(0);
   const landedRef = useRef(false);
-  const [loaded, setLoaded] = useState(false);
-  const [, forceUpdate] = useState(0); // trigger re-draw khi prizes thay đổi
+  const [loaded, setLoaded]     = useState(false);
+  const [fontOk, setFontOk]     = useState(false);
+  const [centerOk, setCenterOk] = useState(false);
+  const [, bump] = useState(0);
 
-  useEffect(() => { prizesRef.current = prizes; forceUpdate(v=>v+1); }, [prizes]);
+  useEffect(() => { prizesRef.current = prizes; bump(v=>v+1); }, [prizes]);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
-  const dpr = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
-  const cx = size/2, cy = size/2;
-  const outerR = size * 0.465;  // bán kính vùng giải (vừa trong viền frame)
-  const hubR   = size * 0.125;  // bán kính nút tâm
+  /* ── Config from settings ── */
+  const s = settings || {};
+  const bgUrl     = s.wheel_image_url || "";
+  const frameUrl  = s.frame_image_url || "";
+  const centerUrl = s.wheel_center_url || "";
+  const fontUrl   = s.seg_font_url || "";
+  const fontName  = s.seg_font_name || "Arial";
+  const txtColor  = s.seg_text_color || "#FFFFFF";
+  const stkColor  = s.seg_stroke_color || "#1b459c";
+  const stkWidth  = parseFloat(s.seg_stroke_width) || 2;
+  const hlColor   = s.hl_color || "#FFFFFF";
+  const hlOpacity = (parseFloat(s.hl_opacity) || 45) / 100;
+  const hlBdColor = s.hl_border_color || "#FFD700";
+  const hlBdWidth = parseFloat(s.hl_border_width) || 2;
+  const radiusPct = parseFloat(s.wheel_seg_radius) || 93;
 
-  /* ═══════ Layer 2: Vẽ segments ═══════ */
+  const dpr    = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
+  const cx     = size/2, cy = size/2;
+  const outerR = size * (radiusPct/200);
+  const hubR   = size * 0.125;
+
+  /* ── Load custom font ── */
+  useEffect(() => {
+    if (!fontUrl || !fontUrl.startsWith("http")) { setFontOk(true); return; }
+    const id = "st-wheel-font";
+    let link = document.getElementById(id);
+    if (!link) { link=document.createElement("link"); link.id=id; link.rel="stylesheet"; document.head.appendChild(link); }
+    link.href = fontUrl;
+    const ready = () => document.fonts.ready.then(()=>setFontOk(true));
+    link.onload = ready; ready();
+  }, [fontUrl]);
+
+  /* ═══ Layer 2: Segments ═══ */
   const drawSegments = useCallback(() => {
-    const c = segRef.current;
-    if (!c) return;
+    const c = segRef.current; if (!c) return;
     const ctx = c.getContext("2d");
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,size,size);
-
     const list = prizesRef.current;
     const n = list.length; if (!n) return;
     const sweep = (2*Math.PI)/n;
 
-    /* Segment fills — xen kẽ 2 tone vàng */
-    const FILLS = ["rgba(255,220,80,0.35)","rgba(255,200,50,0.15)"];
-    const SEG_SPECIAL = {
-      special_30:"#CC2136", special_15:"#1b459c", viral:"#64748b"
-    };
+    const FILLS = ["rgba(255,220,80,0.35)","rgba(255,200,50,0.12)"];
+    const SP = { special_30:"#CC2136", special_15:"#1b459c", viral:"#64748b" };
 
     list.forEach((p,i) => {
-      const start = -Math.PI/2 + i*sweep;
-      const end   = start + sweep;
-
-      /* Fill */
-      let segType = "normal";
-      if (p.prize_type==="viral") segType="viral";
-      else if (p.prize_type==="special") segType=(p.name||"").includes("30")?"special_30":"special_15";
+      const start = -Math.PI/2 + i*sweep, end = start+sweep;
+      let st = "normal";
+      if (p.prize_type==="viral") st="viral";
+      else if (p.prize_type==="special") st=(p.name||"").includes("30")?"special_30":"special_15";
 
       ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,start,end); ctx.closePath();
-      ctx.fillStyle = SEG_SPECIAL[segType] || FILLS[i%2];
-      ctx.fill();
+      ctx.fillStyle = SP[st]||FILLS[i%2]; ctx.fill();
 
-      /* Divider line */
       ctx.beginPath(); ctx.moveTo(cx,cy);
-      ctx.lineTo(cx+outerR*Math.cos(start), cy+outerR*Math.sin(start));
-      ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.lineTo(cx+outerR*Math.cos(start),cy+outerR*Math.sin(start));
+      ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1.5; ctx.stroke();
     });
 
-    /* Badges (text labels) */
+    /* Badges */
+    const ff = fontOk && fontName ? `"${fontName}",` : "";
     list.forEach((p,i) => {
-      const start = -Math.PI/2 + i*sweep;
-      const mid   = start + sweep/2;
+      const start = -Math.PI/2+i*sweep, mid = start+sweep/2;
       const label = (p.short_name||p.name||"").toUpperCase();
       if (!label) return;
+      const segW = 2*outerR*0.6*Math.sin(sweep/2);
+      const fs   = Math.max(7,Math.min(12,segW*0.36-label.length*0.08));
+      ctx.font   = `800 ${fs}px ${ff}Arial,sans-serif`;
+      const tw   = ctx.measureText(label).width;
+      const padX=5,padY=3,bW=tw+padX*2,bH=fs+padY*2,bDist=outerR*0.6;
 
-      const segW  = 2*outerR*0.6*Math.sin(sweep/2);
-      const fs    = Math.max(7, Math.min(11.5, segW*0.36 - label.length*0.1));
-      ctx.font    = `800 ${fs}px Arial,sans-serif`;
-      const tw    = ctx.measureText(label).width;
-      const padX=5, padY=3, bW=tw+padX*2, bH=fs+padY*2;
-      const bDist = outerR*0.6;
-
-      let segType = "normal";
-      if (p.prize_type==="viral") segType="viral";
-      else if (p.prize_type==="special") segType=(p.name||"").includes("30")?"special_30":"special_15";
-      const badgeBg  = SEG_SPECIAL[segType] || "#CC2136";
-      const badgeText = segType==="normal" ? "#FFFFFF" : "#FFD700";
+      let st="normal";
+      if(p.prize_type==="viral")st="viral";
+      else if(p.prize_type==="special")st=(p.name||"").includes("30")?"special_30":"special_15";
+      const bgC = SP[st]||"#CC2136";
 
       ctx.save(); ctx.translate(cx,cy); ctx.rotate(mid);
-      /* Badge rect */
-      const bx=bDist-bW/2, by=-bH/2;
-      ctx.beginPath();
-      ctx.moveTo(bx+3,by); ctx.lineTo(bx+bW-3,by);
-      ctx.arcTo(bx+bW,by,bx+bW,by+3,3); ctx.lineTo(bx+bW,by+bH-3);
-      ctx.arcTo(bx+bW,by+bH,bx+bW-3,by+bH,3); ctx.lineTo(bx+3,by+bH);
-      ctx.arcTo(bx,by+bH,bx,by+bH-3,3); ctx.lineTo(bx,by+3);
-      ctx.arcTo(bx,by,bx+3,by,3); ctx.closePath();
-      ctx.fillStyle=badgeBg; ctx.shadowColor="rgba(0,0,0,.35)"; ctx.shadowBlur=3; ctx.fill();
-      ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=0.8; ctx.stroke();
-      /* Text */
-      ctx.fillStyle=badgeText; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillText(label,bDist,0);
+      /* Rounded rect */
+      const bx=bDist-bW/2, by=-bH/2, r=3;
+      ctx.beginPath(); ctx.moveTo(bx+r,by); ctx.lineTo(bx+bW-r,by);
+      ctx.arcTo(bx+bW,by,bx+bW,by+r,r); ctx.lineTo(bx+bW,by+bH-r);
+      ctx.arcTo(bx+bW,by+bH,bx+bW-r,by+bH,r); ctx.lineTo(bx+r,by+bH);
+      ctx.arcTo(bx,by+bH,bx,by+bH-r,r); ctx.lineTo(bx,by+r);
+      ctx.arcTo(bx,by,bx+r,by,r); ctx.closePath();
+      ctx.fillStyle=bgC; ctx.shadowColor="rgba(0,0,0,.3)"; ctx.shadowBlur=3; ctx.fill();
+      ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.45)"; ctx.lineWidth=0.7; ctx.stroke();
+      /* Text with stroke */
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      if (stkWidth > 0) { ctx.strokeStyle=stkColor; ctx.lineWidth=stkWidth; ctx.lineJoin="round"; ctx.strokeText(label,bDist,0); }
+      ctx.fillStyle=txtColor; ctx.fillText(label,bDist,0);
       ctx.restore();
     });
-  }, [size, dpr, cx, cy, outerR]);
+  }, [size,dpr,cx,cy,outerR,fontOk,fontName,txtColor,stkColor,stkWidth]);
 
-  /* ═══════ Layer 3: Vẽ highlight ═══════ */
-  const drawHL = useCallback((idx, isLanded) => {
-    const c = hlRef.current;
-    if (!c) return;
+  /* ═══ Layer 4: Highlight ═══ */
+  const drawHL = useCallback((idx,isLanded) => {
+    const c = hlRef.current; if (!c) return;
     const ctx = c.getContext("2d");
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,size,size);
+    const n = prizesRef.current.length||1;
+    if (idx<0||idx>=n) return;
+    const sweep = (2*Math.PI)/n;
+    const startA = -Math.PI/2+idx*sweep, endA = startA+sweep;
 
-    const n = prizesRef.current.length || 1;
-    if (idx < 0 || idx >= n) return;
-
-    const sweep  = (2*Math.PI)/n;
-    const startA = -Math.PI/2 + idx*sweep;
-    const endA   = startA + sweep;
-
-    /* Hình quạt highlight */
     ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,startA,endA); ctx.closePath();
+    /* Parse hex color + apply opacity */
+    const hex = hlColor.replace("#","");
+    const rr=parseInt(hex.substring(0,2),16)||255, gg=parseInt(hex.substring(2,4),16)||255, bb=parseInt(hex.substring(4,6),16)||255;
+    const op = isLanded ? Math.min(1,hlOpacity+0.15) : hlOpacity;
+    ctx.fillStyle = `rgba(${rr},${gg},${bb},${op})`;
+    ctx.fill();
+    ctx.strokeStyle = hlBdColor;
+    ctx.lineWidth = isLanded ? hlBdWidth+1 : hlBdWidth;
+    if (isLanded) { ctx.shadowColor=hlBdColor; ctx.shadowBlur=14; }
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }, [size,dpr,cx,cy,outerR,hlColor,hlOpacity,hlBdColor,hlBdWidth]);
 
-    if (isLanded) {
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.fill();
-      ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 3;
-      ctx.shadowColor = "rgba(255,200,0,0.7)"; ctx.shadowBlur = 15;
-      ctx.stroke(); ctx.shadowBlur = 0;
-    } else {
-      ctx.fillStyle = "rgba(255,255,255,0.45)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,215,0,0.85)"; ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-  }, [size, dpr, cx, cy, outerR]);
-
-  /* ═══════ Init canvases ═══════ */
+  /* ═══ Init canvases ═══ */
   useEffect(() => {
-    [segRef, hlRef].forEach(ref => {
-      const c = ref.current; if (!c) return;
-      c.width = size*dpr; c.height = size*dpr;
-    });
-    drawSegments();
-    drawHL(0, false);  // highlight ô đầu tiên ngay khi load
-  }, [size, dpr, drawSegments, drawHL]);
+    [segRef,hlRef].forEach(ref=>{ const c=ref.current; if(c){ c.width=size*dpr; c.height=size*dpr; }});
+    drawSegments(); drawHL(0,false);
+  }, [size,dpr,drawSegments,drawHL]);
 
-  /* Re-draw segments khi prizes thay đổi */
-  useEffect(() => { drawSegments(); drawHL(hlIdxRef.current, landedRef.current); }, [drawSegments, drawHL]);
+  useEffect(() => { drawSegments(); drawHL(hlIdxRef.current,landedRef.current); }, [drawSegments,drawHL]);
 
-  /* ═══════ Chase animation ═══════ */
+  /* ═══ Chase animation ═══ */
   useEffect(() => {
-    if (!spinning || !winnerId) return;
-    const list = prizesRef.current;
-    const n = list.length; if (!n) return;
-
+    if (!spinning||!winnerId) return;
+    const list=prizesRef.current, n=list.length; if (!n) return;
     cancelAnimationFrame(rafRef.current); clearTimeout(rafRef.current);
-    landedRef.current = false;
-
-    const winIdx = list.findIndex(p => String(p.id)===String(winnerId));
-    const targetIdx = winIdx<0 ? Math.floor(Math.random()*n) : winIdx;
-
-    const fullLaps   = 4;
-    const totalSteps = n*fullLaps + targetIdx;
-    const dur        = 5000;
-    const t0         = performance.now();
-    let lastStep     = -1;
-
-    const frame = () => {
-      const elapsed = performance.now()-t0;
-      const progress = Math.min(1, elapsed/dur);
-      const eased = 1 - Math.pow(1-progress, 4);
-      const step  = Math.floor(eased*totalSteps);
-
-      if (step !== lastStep) {
-        lastStep = step;
-        const idx = step % n;
-        hlIdxRef.current = idx;
-        drawHL(idx, false);
-      }
-      if (progress<1) {
-        rafRef.current = requestAnimationFrame(frame);
-      } else {
-        hlIdxRef.current = targetIdx;
-        landedRef.current = true;
-        drawHL(targetIdx, true);
-        /* Pulse 3 lần */
+    landedRef.current=false;
+    const winIdx=list.findIndex(p=>String(p.id)===String(winnerId));
+    const targetIdx=winIdx<0?Math.floor(Math.random()*n):winIdx;
+    const totalSteps=n*4+targetIdx, dur=5000, t0=performance.now();
+    let last=-1;
+    const frame=()=>{
+      const prog=Math.min(1,(performance.now()-t0)/dur);
+      const step=Math.floor((1-Math.pow(1-prog,4))*totalSteps);
+      if(step!==last){ last=step; const idx=step%n; hlIdxRef.current=idx; drawHL(idx,false); }
+      if(prog<1) rafRef.current=requestAnimationFrame(frame);
+      else{
+        hlIdxRef.current=targetIdx; landedRef.current=true; drawHL(targetIdx,true);
         let pc=0;
-        const pulse = () => {
-          pc++;
-          drawHL(targetIdx, true);
-          if (pc%2===0) {
-            const ctx2 = hlRef.current?.getContext("2d");
-            if (ctx2) {
-              ctx2.setTransform(dpr,0,0,dpr,0,0);
-              ctx2.globalAlpha=0.25;
-              ctx2.beginPath(); ctx2.moveTo(cx,cy);
-              ctx2.arc(cx,cy,outerR,-Math.PI/2+targetIdx*(2*Math.PI/n),-Math.PI/2+(targetIdx+1)*(2*Math.PI/n));
-              ctx2.closePath();
-              ctx2.fillStyle="#FFD700"; ctx2.fill();
-              ctx2.globalAlpha=1;
-            }
-          }
-          if (pc<6) rafRef.current=setTimeout(pulse,180);
-          else { drawHL(targetIdx,true); setTimeout(()=>onDoneRef.current?.(),300); }
+        const pulse=()=>{
+          pc++; drawHL(targetIdx,true);
+          if(pc%2===0){ const ctx2=hlRef.current?.getContext("2d"); if(ctx2){
+            ctx2.setTransform(dpr,0,0,dpr,0,0); ctx2.globalAlpha=0.25;
+            const sw=(2*Math.PI)/(prizesRef.current.length||1);
+            ctx2.beginPath(); ctx2.moveTo(cx,cy); ctx2.arc(cx,cy,outerR,-Math.PI/2+targetIdx*sw,-Math.PI/2+(targetIdx+1)*sw); ctx2.closePath();
+            ctx2.fillStyle=hlBdColor; ctx2.fill(); ctx2.globalAlpha=1;
+          }}
+          if(pc<6)rafRef.current=setTimeout(pulse,180);
+          else{ drawHL(targetIdx,true); setTimeout(()=>onDoneRef.current?.(),300); }
         };
         rafRef.current=setTimeout(pulse,180);
       }
     };
-    rafRef.current = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(rafRef.current); clearTimeout(rafRef.current); };
-  }, [spinning, winnerId, drawHL, cx, cy, outerR, dpr]); // eslint-disable-line
+    rafRef.current=requestAnimationFrame(frame);
+    return()=>{cancelAnimationFrame(rafRef.current);clearTimeout(rafRef.current);};
+  }, [spinning,winnerId,drawHL,cx,cy,outerR,dpr,hlBdColor]); // eslint-disable-line
 
-  /* Reset về ô 0 khi hết session quay */
   useEffect(() => {
-    if (!winnerId && !spinning) {
-      hlIdxRef.current = 0; landedRef.current = false;
-      drawHL(0, false);
-    }
-  }, [winnerId, spinning, drawHL]);
+    if(!winnerId&&!spinning){ hlIdxRef.current=0; landedRef.current=false; drawHL(0,false); }
+  }, [winnerId,spinning,drawHL]);
+
+  const hasFrame  = frameUrl && frameUrl.startsWith("http");
+  const hasCenter = centerUrl && centerUrl.startsWith("http");
+  const hasBg     = bgUrl && bgUrl.startsWith("http");
 
   return (
     <div style={{ position:"relative", width:size, height:size }}>
@@ -314,37 +291,44 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
         borderTop:"28px solid #e99849", filter:"drop-shadow(0 2px 6px rgba(0,0,0,.5))" }}/>
 
       {/* Loading */}
-      {!loaded && (
+      {hasBg && !loaded && (
         <div style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", borderRadius:"50%",
           background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:14, color:"#9ca3af", zIndex:1 }}>Đang tải...</div>
       )}
 
-      {/* Layer 1: Ảnh nền + viền bánh xe */}
-      <img src={imageUrl} alt="" onLoad={()=>setLoaded(true)} draggable={false}
+      {/* L1: Ảnh nền + viền */}
+      {hasBg && <img src={bgUrl} alt="" onLoad={()=>setLoaded(true)} draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           borderRadius:"50%", objectFit:"contain", zIndex:2,
-          display:loaded?"block":"none", userSelect:"none" }}/>
+          display:loaded?"block":"none", userSelect:"none" }}/>}
 
-      {/* Layer 2: Segments canvas (chia ngăn + text giải thưởng) */}
-      <canvas ref={segRef}
+      {/* L2: Segments canvas */}
+      <canvas ref={segRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5 }}/>
+
+      {/* L3: Khung trang trí (đè lên L1+L2, che viền thừa) */}
+      {hasFrame && <img src={frameUrl} alt="" draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-          pointerEvents:"none", zIndex:10 }}/>
+          objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
 
-      {/* Layer 3: Highlight-chase canvas */}
-      <canvas ref={hlRef}
-        style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-          pointerEvents:"none", zIndex:15 }}/>
+      {/* L4: Highlight canvas */}
+      <canvas ref={hlRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:15 }}/>
 
-      {/* Layer 4: Nút tâm */}
-      <div style={{
-        position:"absolute", zIndex:20,
-        left:cx-hubR, top:cy-hubR, width:hubR*2, height:hubR*2,
-        borderRadius:"50%",
-        background:"radial-gradient(circle at 35% 35%, #6BAAFF 0%, #1b65d4 40%, #0a2a6e 100%)",
-        boxShadow:"0 0 0 4px rgba(200,200,200,.6), 0 0 0 8px rgba(100,100,100,.25), 0 4px 12px rgba(0,0,0,.3)",
-        cursor:"default"
-      }}/>
+      {/* L5: Nút tâm */}
+      {hasCenter ? (
+        <img src={centerUrl} alt="" draggable={false}
+          onLoad={()=>setCenterOk(true)}
+          style={{ position:"absolute", zIndex:20,
+            left:cx-hubR, top:cy-hubR, width:hubR*2, height:hubR*2,
+            borderRadius:"50%", objectFit:"contain", userSelect:"none",
+            display:centerOk?"block":"none" }}/>
+      ) : (
+        <div style={{ position:"absolute", zIndex:20,
+          left:cx-hubR, top:cy-hubR, width:hubR*2, height:hubR*2,
+          borderRadius:"50%",
+          background:"radial-gradient(circle at 35% 35%, #6BAAFF 0%, #1b65d4 40%, #0a2a6e 100%)",
+          boxShadow:"0 0 0 4px rgba(200,200,200,.6), 0 0 0 8px rgba(100,100,100,.25), 0 4px 12px rgba(0,0,0,.3)" }}/>
+      )}
     </div>
   );
 }
@@ -622,7 +606,11 @@ function CustomerPage({ onAdmin }) {
   const [settings, setSettings] = useState({
     event_name:"SanThai", event_subtitle:"Vòng Quay May Mắn",
     description:"", show_prize_list:"false",
-    bg_color:"#F5F0E8", bg_image_url:"", frame_image_url:"", wheel_image_url:""
+    bg_color:"#F5F0E8", bg_image_url:"", frame_image_url:"", wheel_image_url:"",
+    wheel_center_url:"", seg_font_url:"", seg_font_name:"",
+    seg_text_color:"#FFFFFF", seg_stroke_color:"#1b459c", seg_stroke_width:"2",
+    hl_color:"#FFFFFF", hl_opacity:"45", hl_border_color:"#FFD700", hl_border_width:"2",
+    wheel_seg_radius:"93"
   });
   const [bill,       setBill]       = useState("");
   const [phone,      setPhone]      = useState(()=>{ try{return localStorage.getItem("st_phone")||""}catch{return""} });
@@ -776,12 +764,12 @@ function CustomerPage({ onAdmin }) {
           <div style={{position:"relative",display:"inline-block"}}>
             {useImageWheel ? (
               <WheelImageSpinner prizes={prizes} winnerId={currentPrize?.prize_id}
-                spinning={spinning} onDone={handleSpinDone} size={wheelSize} imageUrl={settings.wheel_image_url}/>
+                spinning={spinning} onDone={handleSpinDone} size={wheelSize} settings={settings}/>
             ) : (
               <WheelCanvas prizes={prizes} winnerId={currentPrize?.prize_id}
                 spinning={spinning} onDone={handleSpinDone} size={wheelSize}/>
             )}
-            {settings.frame_image_url&&settings.frame_image_url.startsWith("http")&&(
+            {!useImageWheel&&settings.frame_image_url&&settings.frame_image_url.startsWith("http")&&(
               <img src={settings.frame_image_url} alt="" style={{position:"absolute",inset:-10,width:"calc(100% + 20px)",height:"calc(100% + 20px)",pointerEvents:"none",objectFit:"contain",zIndex:5}}/>
             )}
           </div>
@@ -1035,7 +1023,11 @@ function AdminPage({ onBack }) {
   const [adminSettings, setAdminSettings] = useState({
     event_name:"",event_subtitle:"",description:"",
     show_prize_list:"false",bg_color:"#F5F0E8",
-    bg_image_url:"",frame_image_url:"",wheel_image_url:""
+    bg_image_url:"",frame_image_url:"",wheel_image_url:"",
+    wheel_center_url:"",seg_font_url:"",seg_font_name:"",
+    seg_text_color:"#FFFFFF",seg_stroke_color:"#1b459c",seg_stroke_width:"2",
+    hl_color:"#FFFFFF",hl_opacity:"45",hl_border_color:"#FFD700",hl_border_width:"2",
+    wheel_seg_radius:"93"
   });
   const [settingsSaved, setSettingsSaved] = useState("");
 
@@ -1133,10 +1125,8 @@ function AdminPage({ onBack }) {
             {[
               {key:"event_name",      label:"Tên sự kiện",        placeholder:"SanThai",type:"text",hint:"Hiển thị ở header"},
               {key:"event_subtitle",  label:"Tagline / Phụ đề",   placeholder:"Vòng Quay May Mắn — Thất Kiếm Lệnh",type:"text",hint:"Dòng nhỏ dưới tên"},
-              {key:"bg_color",        label:"Màu nền (nếu không dùng ảnh)",placeholder:"#F5F0E8",type:"color",hint:""},
-              {key:"bg_image_url",    label:"URL ảnh nền",         placeholder:"https://...",type:"url",hint:"Để trống nếu dùng màu nền"},
-              {key:"wheel_image_url", label:"⭐ URL ảnh nền vòng quay",placeholder:"https://... (PNG/JPG chỉ viền + nền, KHÔNG có text giải)",type:"url",hint:"Layer 1: chỉ viền + nền. Giải thưởng + highlight + nút tâm được code tự vẽ lên trên"},
-              {key:"frame_image_url", label:"URL ảnh khung vòng quay (tùy chọn)",placeholder:"https://... (PNG trong suốt, chỉ phần viền)",type:"url",hint:"Overlay decorative lên vòng quay"},
+              {key:"bg_color",        label:"Màu nền trang",placeholder:"#F5F0E8",type:"color",hint:""},
+              {key:"bg_image_url",    label:"URL ảnh nền trang",         placeholder:"https://...",type:"url",hint:"Để trống nếu dùng màu nền"},
             ].map(({key,label,placeholder,type,hint})=>(
               <div key={key} style={{marginBottom:16}}>
                 <label style={{fontSize:13,fontWeight:700,display:"block",marginBottom:4,color:"#374151"}}>{label}</label>
@@ -1145,10 +1135,100 @@ function AdminPage({ onBack }) {
                     <input type="color" value={adminSettings[key]||"#F5F0E8"} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} style={{width:50,height:38,border:"1px solid #d1d5db",borderRadius:8,cursor:"pointer",padding:2}}/>
                     <input type="text" value={adminSettings[key]||""} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} style={{...inp,flex:1}}/>
                   </div>
-                ) : <input type={type==="url"?"text":type} value={adminSettings[key]||""} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} style={{...inp,width:"100%"}}/>}
+                ) : <input type="text" value={adminSettings[key]||""} onChange={e=>setAdminSettings(p=>({...p,[key]:e.target.value}))} placeholder={placeholder} style={{...inp,width:"100%"}}/>}
                 {hint&&<div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{hint}</div>}
               </div>
             ))}
+
+            {/* ── TÙY CHỈNH VÒNG QUAY (5 LAYERS) ── */}
+            <h3 style={{fontSize:16,fontWeight:900,margin:"28px 0 8px",borderTop:"2px solid #e5e7eb",paddingTop:20}}>🎡 Tùy chỉnh vòng quay</h3>
+            <div style={{fontSize:12,color:"#9ca3af",marginBottom:16}}>Điền URL ảnh Layer 1 để kích hoạt chế độ custom (thay vì canvas mặc định)</div>
+
+            {/* Layer 1 */}
+            <div style={{background:"#fffbeb",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #fde68a"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#92400e"}}>Layer 1 — Ảnh nền bánh xe</div>
+              <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG/JPG, 800×800px | Chỉ viền + nền gradient, KHÔNG có text giải thưởng</div>
+              <input type="text" value={adminSettings.wheel_image_url||""} onChange={e=>setAdminSettings(p=>({...p,wheel_image_url:e.target.value}))} placeholder="https://..." style={{...inp,width:"100%"}}/>
+            </div>
+
+            {/* Layer 2 */}
+            <div style={{background:"#eff6ff",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bfdbfe"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#1e40af"}}>Layer 2 — Text giải thưởng</div>
+              <div style={{fontSize:11,color:"#6b7280",marginBottom:8}}>Code tự vẽ chia ngăn + text. Custom font để hiển thị tiếng Việt đẹp.</div>
+              {[
+                {key:"seg_font_url",    label:"Google Fonts URL",  ph:"https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@700;800&display=swap"},
+                {key:"seg_font_name",   label:"Tên font",          ph:"Be Vietnam Pro"},
+              ].map(f=>(
+                <div key={f.key} style={{marginBottom:10}}>
+                  <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>{f.label}</label>
+                  <input type="text" value={adminSettings[f.key]||""} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} style={{...inp,width:"100%",marginTop:2}}/>
+                </div>
+              ))}
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {[
+                  {key:"seg_text_color",   label:"Màu text",       def:"#FFFFFF"},
+                  {key:"seg_stroke_color", label:"Màu viền text",  def:"#1b459c"},
+                ].map(f=>(
+                  <div key={f.key} style={{flex:"1 1 45%",marginBottom:8}}>
+                    <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>{f.label}</label>
+                    <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
+                      <input type="color" value={adminSettings[f.key]||f.def} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} style={{width:36,height:30,border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",padding:1}}/>
+                      <input type="text" value={adminSettings[f.key]||""} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} placeholder={f.def} style={{...inp,flex:1}}/>
+                    </div>
+                  </div>
+                ))}
+                <div style={{flex:"1 1 45%",marginBottom:8}}>
+                  <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Độ dày viền text</label>
+                  <input type="text" value={adminSettings.seg_stroke_width||""} onChange={e=>setAdminSettings(p=>({...p,seg_stroke_width:e.target.value}))} placeholder="2" style={{...inp,width:"100%",marginTop:2}}/>
+                  <div style={{fontSize:11,color:"#9ca3af"}}>0 = không viền, 1-4 = nhẹ → đậm</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Layer 3 */}
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bbf7d0"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#166534"}}>Layer 3 — Khung trang trí</div>
+              <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG trong suốt, 800×800px | Chỉ phần viền/khung, tâm trong suốt. Đè lên L1+L2, che viền thừa.</div>
+              <input type="text" value={adminSettings.frame_image_url||""} onChange={e=>setAdminSettings(p=>({...p,frame_image_url:e.target.value}))} placeholder="https://..." style={{...inp,width:"100%"}}/>
+            </div>
+
+            {/* Layer 4 */}
+            <div style={{background:"#fefce8",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #fef08a"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#854d0e"}}>Layer 4 — Highlight chase</div>
+              <div style={{fontSize:11,color:"#6b7280",marginBottom:8}}>Ô sáng chạy quanh rồi dừng ở giải trúng. Hiện ngay từ đầu ở ô 0.</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {[
+                  {key:"hl_color",        label:"Màu fill",    def:"#FFFFFF"},
+                  {key:"hl_border_color", label:"Màu viền",    def:"#FFD700"},
+                ].map(f=>(
+                  <div key={f.key} style={{flex:"1 1 45%",marginBottom:8}}>
+                    <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>{f.label}</label>
+                    <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
+                      <input type="color" value={adminSettings[f.key]||f.def} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} style={{width:36,height:30,border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",padding:1}}/>
+                      <input type="text" value={adminSettings[f.key]||""} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} placeholder={f.def} style={{...inp,flex:1}}/>
+                    </div>
+                  </div>
+                ))}
+                {[
+                  {key:"hl_opacity",      label:"Opacity (%)",        ph:"45", note:"0=trong suốt, 100=đặc"},
+                  {key:"hl_border_width", label:"Độ dày viền (px)",   ph:"2", note:""},
+                  {key:"wheel_seg_radius",label:"Bán kính ô quay (%)",ph:"93", note:"80-98, khớp với viền khung L3"},
+                ].map(f=>(
+                  <div key={f.key} style={{flex:"1 1 30%",marginBottom:8}}>
+                    <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>{f.label}</label>
+                    <input type="text" value={adminSettings[f.key]||""} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} style={{...inp,width:"100%",marginTop:2}}/>
+                    {f.note&&<div style={{fontSize:11,color:"#9ca3af"}}>{f.note}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Layer 5 */}
+            <div style={{background:"#faf5ff",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #e9d5ff"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#7e22ce"}}>Layer 5 — Nút tâm</div>
+              <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG trong suốt, 200×200px, hình tròn. Để trống → dùng nút gradient mặc định.</div>
+              <input type="text" value={adminSettings.wheel_center_url||""} onChange={e=>setAdminSettings(p=>({...p,wheel_center_url:e.target.value}))} placeholder="https://..." style={{...inp,width:"100%"}}/>
+            </div>
             <div style={{marginBottom:16}}>
               <label style={{fontSize:13,fontWeight:700,display:"block",marginBottom:4,color:"#374151"}}>Thể lệ / Mô tả sự kiện</label>
               <textarea value={adminSettings.description||""} onChange={e=>setAdminSettings(p=>({...p,description:e.target.value}))}
