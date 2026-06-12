@@ -95,17 +95,80 @@ const WHEEL_TEXT_COLORS = [
   '#FFFFFF','#FFFFFF','#1b459c','#1b459c',
 ];
 
-/* ─── WHEEL IMAGE SPINNER (Highlight-Chase Mode) ─── */
+/* ─── WHEEL IMAGE SPINNER (Canvas Highlight-Chase) ─── */
 function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl }) {
-  const [hlIdx, setHlIdx]     = useState(-1);
-  const [landed, setLanded]   = useState(false);
-  const [loaded, setLoaded]   = useState(false);
+  const hlRef     = useRef(null);   // canvas overlay
+  const imgRef    = useRef(null);   // wheel image
   const rafRef    = useRef(null);
   const prizesRef = useRef(prizes);
   const onDoneRef = useRef(onDone);
+  const hlState   = useRef({ idx:-1, landed:false }); // mutable, avoid re-render
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => { prizesRef.current = prizes; }, [prizes]);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+
+  /* ── Draw highlight on canvas ── */
+  const drawHL = useCallback((idx, isLanded) => {
+    const c = hlRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const W = size;
+    const cx = W / 2, cy = W / 2;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, W);
+
+    const n = prizesRef.current.length || 1;
+    if (idx < 0 || idx >= n) {
+      /* Idle: chấm cam nhỏ ở đỉnh 12h */
+      ctx.beginPath();
+      ctx.arc(cx, W * 0.1, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(233,152,73,0.7)";
+      ctx.fill();
+      return;
+    }
+
+    const segAngle = (2 * Math.PI) / n;
+    const startA = -Math.PI / 2 + idx * segAngle;
+    const endA   = startA + segAngle;
+    const R = W * 0.43; // khớp với viền ảnh (~86% bán kính)
+
+    /* Vẽ hình quạt highlight */
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, R, startA, endA);
+    ctx.closePath();
+
+    if (isLanded) {
+      ctx.fillStyle = "rgba(255,200,0,0.55)";
+      ctx.fill();
+      ctx.strokeStyle = "#FFD700";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      /* Glow edge */
+      ctx.shadowColor = "rgba(255,200,0,0.6)";
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.fillStyle = "rgba(50,100,255,0.45)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }, [size]);
+
+  /* ── Init canvas size ── */
+  useEffect(() => {
+    const c = hlRef.current;
+    if (!c) return;
+    const dpr = window.devicePixelRatio || 1;
+    c.width  = size * dpr;
+    c.height = size * dpr;
+    if (loaded) drawHL(-1, false);
+  }, [size, loaded, drawHL]);
 
   /* ── Chase animation ── */
   useEffect(() => {
@@ -113,8 +176,10 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
     const list = prizesRef.current;
     const n = list.length;
     if (!n) return;
-    setLanded(false); setHlIdx(0);
+
     cancelAnimationFrame(rafRef.current);
+    hlState.current = { idx: 0, landed: false };
+    drawHL(0, false);
 
     const winIdx = list.findIndex(p => String(p.id) === String(winnerId));
     const targetIdx = winIdx < 0 ? Math.floor(Math.random() * n) : winIdx;
@@ -131,47 +196,79 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
       const eased = 1 - Math.pow(1 - progress, 4);
       const step  = Math.floor(eased * totalSteps);
 
-      if (step !== lastStep) { lastStep = step; setHlIdx(step % n); }
+      if (step !== lastStep) {
+        lastStep = step;
+        const idx = step % n;
+        hlState.current.idx = idx;
+        drawHL(idx, false);
+      }
 
       if (progress < 1) {
         rafRef.current = requestAnimationFrame(frame);
       } else {
-        setHlIdx(targetIdx);
-        setLanded(true);
-        setTimeout(() => onDoneRef.current?.(), 700);
+        hlState.current = { idx: targetIdx, landed: true };
+        drawHL(targetIdx, true);
+        /* Pulse landed 3 lần */
+        let pulseCount = 0;
+        const pulse = () => {
+          pulseCount++;
+          const on = pulseCount % 2 === 0;
+          drawHL(targetIdx, true);
+          if (on) {
+            const c = hlRef.current;
+            if (c) {
+              const ctx = c.getContext("2d");
+              const dpr = window.devicePixelRatio || 1;
+              ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+              ctx.globalAlpha = 0.3;
+              const segAngle = (2 * Math.PI) / n;
+              const startA = -Math.PI / 2 + targetIdx * segAngle;
+              const endA = startA + segAngle;
+              const R = size * 0.43;
+              ctx.beginPath();
+              ctx.moveTo(size/2, size/2);
+              ctx.arc(size/2, size/2, R, startA, endA);
+              ctx.closePath();
+              ctx.fillStyle = "#fff";
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+          }
+          if (pulseCount < 6) {
+            rafRef.current = setTimeout(pulse, 200);
+          } else {
+            drawHL(targetIdx, true);
+            setTimeout(() => onDoneRef.current?.(), 300);
+          }
+        };
+        rafRef.current = setTimeout(pulse, 200);
       }
     };
     rafRef.current = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [spinning, winnerId]); // eslint-disable-line
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      clearTimeout(rafRef.current);
+    };
+  }, [spinning, winnerId, drawHL]); // eslint-disable-line
 
   /* Reset khi hết lượt quay */
   useEffect(() => {
-    if (!winnerId && !spinning) { setHlIdx(-1); setLanded(false); }
-  }, [winnerId, spinning]);
+    if (!winnerId && !spinning) {
+      hlState.current = { idx: -1, landed: false };
+      if (loaded) drawHL(-1, false);
+    }
+  }, [winnerId, spinning, loaded, drawHL]);
 
-  /* ── SVG helpers ── */
-  const n = prizes.length || 1;
-  const seg = 360 / n;
-  const R = 50, cx = 50, cy = 50;
-  const clipR = 43;
-
-  const piePath = (idx) => {
-    const a1 = ((idx * seg - 90) * Math.PI) / 180;
-    const a2 = (((idx + 1) * seg - 90) * Math.PI) / 180;
-    const x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1);
-    const x2 = cx + R * Math.cos(a2), y2 = cy + R * Math.sin(a2);
-    return `M${cx},${cy} L${x1},${y1} A${R},${R} 0 ${seg > 180 ? 1 : 0} 1 ${x2},${y2} Z`;
-  };
+  /* ── Pointer (tam giác cam) ── */
+  const Pointer = () => (
+    <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:20,
+      width:0, height:0, borderLeft:"13px solid transparent", borderRight:"13px solid transparent",
+      borderTop:"26px solid #e99849", filter:"drop-shadow(0 2px 5px rgba(0,0,0,.5))" }}/>
+  );
 
   return (
     <div style={{ position:"relative", width:size, height:size }}>
-      {/* Pointer — z cao nhất */}
-      <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:20,
-        width:0, height:0, borderLeft:"13px solid transparent", borderRight:"13px solid transparent",
-        borderTop:"26px solid #e99849", filter:"drop-shadow(0 2px 5px rgba(0,0,0,.5))" }}/>
-
-      {/* Loading */}
+      <Pointer/>
       {!loaded && (
         <div style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", borderRadius:"50%",
           background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
@@ -180,49 +277,17 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, imageUrl 
         </div>
       )}
 
-      {/* Ảnh bánh xe — z thấp */}
-      <img src={imageUrl} alt="vòng quay" onLoad={() => setLoaded(true)} draggable={false}
+      {/* Ảnh bánh xe — tĩnh */}
+      <img ref={imgRef} src={imageUrl} alt="vòng quay"
+        onLoad={() => setLoaded(true)} draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-          borderRadius:"50%", zIndex:2, objectFit:"contain",
-          display:loaded?"block":"none", userSelect:"none", WebkitUserDrag:"none" }}/>
+          borderRadius:"50%", objectFit:"contain",
+          display:loaded?"block":"none", userSelect:"none" }}/>
 
-      {/* SVG Highlight overlay — z cao hơn ảnh */}
-      {loaded && (
-        <svg viewBox="0 0 100 100"
-          style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
-            pointerEvents:"none", zIndex:15 }}>
-          <defs>
-            <clipPath id="hlClip"><circle cx={cx} cy={cy} r={clipR}/></clipPath>
-            <filter id="hlGlow">
-              <feGaussianBlur stdDeviation="2.5" result="b"/>
-              <feComposite in="SourceGraphic" in2="b" operator="over"/>
-            </filter>
-          </defs>
-
-          {hlIdx >= 0 ? (
-            <g clipPath="url(#hlClip)">
-              {/* Ô sáng chính */}
-              <path d={piePath(hlIdx)}
-                fill={landed ? "rgba(255,180,0,0.55)" : "rgba(50,100,255,0.48)"}
-                stroke={landed ? "#FFD700" : "rgba(255,255,255,0.95)"}
-                strokeWidth={landed ? "1.5" : "1"}
-                filter={landed ? "url(#hlGlow)" : undefined}
-                style={landed ? { animation:"hl-pulse .8s ease-in-out infinite" } : undefined}
-              />
-              {/* Viền sáng phụ */}
-              <path d={piePath(hlIdx)}
-                fill="none"
-                stroke={landed ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)"}
-                strokeWidth="0.5"
-              />
-            </g>
-          ) : (
-            /* Idle: chấm sáng nhỏ ở đỉnh 12h để confirm SVG hoạt động */
-            <circle cx={cx} cy={cy - clipR + 3} r="2.5"
-              fill="rgba(233,152,73,0.6)" style={{ animation:"hl-pulse 2s ease-in-out infinite" }}/>
-          )}
-        </svg>
-      )}
+      {/* Canvas highlight overlay — cùng kỹ thuật WheelCanvas đã chạy tốt */}
+      <canvas ref={hlRef}
+        style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
+          pointerEvents:"none", borderRadius:"50%", zIndex:10 }}/>
     </div>
   );
 }
