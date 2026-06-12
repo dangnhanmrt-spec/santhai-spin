@@ -117,11 +117,13 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const bgUrl     = s.wheel_image_url || "";
   const frameUrl  = s.frame_image_url || "";
   const centerUrl = s.wheel_center_url || "";
-  const fontUrl   = s.seg_font_url || "";
-  const fontName  = s.seg_font_name || "Arial";
+  const fontName  = s.seg_font_name || "";
   const txtColor  = s.seg_text_color || "#FFFFFF";
   const stkColor  = s.seg_stroke_color || "#1b459c";
   const stkWidth  = parseFloat(s.seg_stroke_width) || 2;
+  const badgeShow = s.seg_badge_show !== "false";
+  const badgeColor= s.seg_badge_color || "";
+  const badgeOp   = (parseFloat(s.seg_badge_opacity)||100)/100;
   const hlColor   = s.hl_color || "#FFFFFF";
   const hlOpacity = (parseFloat(s.hl_opacity) || 45) / 100;
   const hlBdColor = s.hl_border_color || "#FFD700";
@@ -133,16 +135,19 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const outerR = size * (radiusPct/200);
   const hubR   = size * 0.125;
 
-  /* ── Load custom font ── */
+  /* ── Load custom font (auto-build Google Fonts URL from name) ── */
   useEffect(() => {
-    if (!fontUrl || !fontUrl.startsWith("http")) { setFontOk(true); return; }
+    if (!fontName) { setFontOk(true); return; }
+    const encoded = fontName.trim().replace(/\s+/g,"+");
+    const url = `https://fonts.googleapis.com/css2?family=${encoded}:wght@400;700;800;900&display=swap`;
     const id = "st-wheel-font";
     let link = document.getElementById(id);
     if (!link) { link=document.createElement("link"); link.id=id; link.rel="stylesheet"; document.head.appendChild(link); }
-    link.href = fontUrl;
+    link.href = url;
+    setFontOk(false);
     const ready = () => document.fonts.ready.then(()=>setFontOk(true));
     link.onload = ready; ready();
-  }, [fontUrl]);
+  }, [fontName]);
 
   /* ═══ Layer 2: Segments ═══ */
   const drawSegments = useCallback(() => {
@@ -186,25 +191,32 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       let st="normal";
       if(p.prize_type==="viral")st="viral";
       else if(p.prize_type==="special")st=(p.name||"").includes("30")?"special_30":"special_15";
-      const bgC = SP[st]||"#CC2136";
 
       ctx.save(); ctx.translate(cx,cy); ctx.rotate(mid);
-      /* Rounded rect */
-      const bx=bDist-bW/2, by=-bH/2, r=3;
-      ctx.beginPath(); ctx.moveTo(bx+r,by); ctx.lineTo(bx+bW-r,by);
-      ctx.arcTo(bx+bW,by,bx+bW,by+r,r); ctx.lineTo(bx+bW,by+bH-r);
-      ctx.arcTo(bx+bW,by+bH,bx+bW-r,by+bH,r); ctx.lineTo(bx+r,by+bH);
-      ctx.arcTo(bx,by+bH,bx,by+bH-r,r); ctx.lineTo(bx,by+r);
-      ctx.arcTo(bx,by,bx+r,by,r); ctx.closePath();
-      ctx.fillStyle=bgC; ctx.shadowColor="rgba(0,0,0,.3)"; ctx.shadowBlur=3; ctx.fill();
-      ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.45)"; ctx.lineWidth=0.7; ctx.stroke();
+
+      if (badgeShow) {
+        /* Badge background */
+        const defaultBg = SP[st]||"#CC2136";
+        const bgC = (st==="normal" && badgeColor) ? badgeColor : defaultBg;
+        const bx=bDist-bW/2, by=-bH/2, r=3;
+        ctx.globalAlpha = badgeOp;
+        ctx.beginPath(); ctx.moveTo(bx+r,by); ctx.lineTo(bx+bW-r,by);
+        ctx.arcTo(bx+bW,by,bx+bW,by+r,r); ctx.lineTo(bx+bW,by+bH-r);
+        ctx.arcTo(bx+bW,by+bH,bx+bW-r,by+bH,r); ctx.lineTo(bx+r,by+bH);
+        ctx.arcTo(bx,by+bH,bx,by+bH-r,r); ctx.lineTo(bx,by+r);
+        ctx.arcTo(bx,by,bx+r,by,r); ctx.closePath();
+        ctx.fillStyle=bgC; ctx.shadowColor="rgba(0,0,0,.3)"; ctx.shadowBlur=3; ctx.fill();
+        ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.45)"; ctx.lineWidth=0.7; ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
       /* Text with stroke */
       ctx.textAlign="center"; ctx.textBaseline="middle";
       if (stkWidth > 0) { ctx.strokeStyle=stkColor; ctx.lineWidth=stkWidth; ctx.lineJoin="round"; ctx.strokeText(label,bDist,0); }
       ctx.fillStyle=txtColor; ctx.fillText(label,bDist,0);
       ctx.restore();
     });
-  }, [size,dpr,cx,cy,outerR,fontOk,fontName,txtColor,stkColor,stkWidth]);
+  }, [size,dpr,cx,cy,outerR,fontOk,fontName,txtColor,stkColor,stkWidth,badgeShow,badgeColor,badgeOp]);
 
   /* ═══ Layer 4: Highlight ═══ */
   const drawHL = useCallback((idx,isLanded) => {
@@ -607,8 +619,9 @@ function CustomerPage({ onAdmin }) {
     event_name:"SanThai", event_subtitle:"Vòng Quay May Mắn",
     description:"", show_prize_list:"false",
     bg_color:"#F5F0E8", bg_image_url:"", frame_image_url:"", wheel_image_url:"",
-    wheel_center_url:"", seg_font_url:"", seg_font_name:"",
+    wheel_center_url:"", seg_font_name:"",
     seg_text_color:"#FFFFFF", seg_stroke_color:"#1b459c", seg_stroke_width:"2",
+    seg_badge_show:"true", seg_badge_color:"", seg_badge_opacity:"100",
     hl_color:"#FFFFFF", hl_opacity:"45", hl_border_color:"#FFD700", hl_border_width:"2",
     wheel_seg_radius:"93"
   });
@@ -1024,8 +1037,9 @@ function AdminPage({ onBack }) {
     event_name:"",event_subtitle:"",description:"",
     show_prize_list:"false",bg_color:"#F5F0E8",
     bg_image_url:"",frame_image_url:"",wheel_image_url:"",
-    wheel_center_url:"",seg_font_url:"",seg_font_name:"",
+    wheel_center_url:"",seg_font_name:"",
     seg_text_color:"#FFFFFF",seg_stroke_color:"#1b459c",seg_stroke_width:"2",
+    seg_badge_show:"true",seg_badge_color:"",seg_badge_opacity:"100",
     hl_color:"#FFFFFF",hl_opacity:"45",hl_border_color:"#FFD700",hl_border_width:"2",
     wheel_seg_radius:"93"
   });
@@ -1155,15 +1169,16 @@ function AdminPage({ onBack }) {
             <div style={{background:"#eff6ff",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bfdbfe"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#1e40af"}}>Layer 2 — Text giải thưởng</div>
               <div style={{fontSize:11,color:"#6b7280",marginBottom:8}}>Code tự vẽ chia ngăn + text. Custom font để hiển thị tiếng Việt đẹp.</div>
-              {[
-                {key:"seg_font_url",    label:"Google Fonts URL",  ph:"https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@700;800&display=swap"},
-                {key:"seg_font_name",   label:"Tên font",          ph:"Be Vietnam Pro"},
-              ].map(f=>(
-                <div key={f.key} style={{marginBottom:10}}>
-                  <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>{f.label}</label>
-                  <input type="text" value={adminSettings[f.key]||""} onChange={e=>setAdminSettings(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} style={{...inp,width:"100%",marginTop:2}}/>
-                </div>
-              ))}
+
+              {/* Font — chỉ cần tên */}
+              <div style={{marginBottom:10}}>
+                <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Tên font (Google Fonts)</label>
+                <input type="text" value={adminSettings.seg_font_name||""} onChange={e=>setAdminSettings(p=>({...p,seg_font_name:e.target.value}))}
+                  placeholder="Be Vietnam Pro" style={{...inp,width:"100%",marginTop:2}}/>
+                <div style={{fontSize:11,color:"#9ca3af"}}>Tìm tại <a href="https://fonts.google.com" target="_blank" rel="noreferrer" style={{color:"#3b82f6"}}>fonts.google.com</a> → copy tên font. Để trống = Arial mặc định</div>
+              </div>
+
+              {/* Màu text + viền */}
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 {[
                   {key:"seg_text_color",   label:"Màu text",       def:"#FFFFFF"},
@@ -1181,6 +1196,30 @@ function AdminPage({ onBack }) {
                   <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Độ dày viền text</label>
                   <input type="text" value={adminSettings.seg_stroke_width||""} onChange={e=>setAdminSettings(p=>({...p,seg_stroke_width:e.target.value}))} placeholder="2" style={{...inp,width:"100%",marginTop:2}}/>
                   <div style={{fontSize:11,color:"#9ca3af"}}>0 = không viền, 1-4 = nhẹ → đậm</div>
+                </div>
+              </div>
+
+              {/* Badge */}
+              <div style={{borderTop:"1px solid #dbeafe",paddingTop:10,marginTop:6}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#1e40af",marginBottom:6}}>Badge (nền chữ)</div>
+                <label style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:8,color:"#374151"}}>
+                  <input type="checkbox" checked={adminSettings.seg_badge_show!=="false"} onChange={e=>setAdminSettings(p=>({...p,seg_badge_show:e.target.checked?"true":"false"}))} style={{width:16,height:16}}/>
+                  Hiện badge nền sau chữ
+                </label>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 50%",marginBottom:6}}>
+                    <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Màu badge (giải thường)</label>
+                    <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
+                      <input type="color" value={adminSettings.seg_badge_color||"#CC2136"} onChange={e=>setAdminSettings(p=>({...p,seg_badge_color:e.target.value}))} style={{width:36,height:30,border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",padding:1}}/>
+                      <input type="text" value={adminSettings.seg_badge_color||""} onChange={e=>setAdminSettings(p=>({...p,seg_badge_color:e.target.value}))} placeholder="#CC2136" style={{...inp,flex:1}}/>
+                    </div>
+                    <div style={{fontSize:11,color:"#9ca3af"}}>Giải đặc biệt/viral giữ màu riêng</div>
+                  </div>
+                  <div style={{flex:"1 1 40%",marginBottom:6}}>
+                    <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Opacity badge (%)</label>
+                    <input type="text" value={adminSettings.seg_badge_opacity||""} onChange={e=>setAdminSettings(p=>({...p,seg_badge_opacity:e.target.value}))} placeholder="100" style={{...inp,width:"100%",marginTop:2}}/>
+                    <div style={{fontSize:11,color:"#9ca3af"}}>0=ẩn, 50=mờ, 100=đặc</div>
+                  </div>
                 </div>
               </div>
             </div>
