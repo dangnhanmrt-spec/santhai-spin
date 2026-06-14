@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
+  supabaseClient, checkEmailAccess,
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
   loadStoreStats, loadSettings, saveSetting,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
@@ -8,8 +9,8 @@ import {
 } from "./supabase.js";
 
 /* ─── CONSTANTS ─── */
-const ADMIN_PWD = "Santhai2024";
 const LOW_STOCK = 10;
+const SUPER_ADMIN = "dangnhan.mrt@gmail.com";
 
 /* ─── STORE MAP ─── */
 const STORE_PREFIXES = [
@@ -97,8 +98,8 @@ const WHEEL_TEXT_COLORS = [
 
 /* ─── WHEEL IMAGE SPINNER (5-Layer Architecture) ─── */
 function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings }) {
-  const segRef    = useRef(null);   // L2: segments
-  const hlRef     = useRef(null);   // L4: highlight
+  const segRef    = useRef(null);
+  const hlRef     = useRef(null);
   const rafRef    = useRef(null);
   const prizesRef = useRef(prizes);
   const onDoneRef = useRef(onDone);
@@ -112,7 +113,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   useEffect(() => { prizesRef.current = prizes; bump(v=>v+1); }, [prizes]);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
-  /* ── Config from settings ── */
   const s = settings || {};
   const bgUrl     = s.wheel_image_url || "";
   const frameUrl  = s.frame_image_url || "";
@@ -135,7 +135,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const outerR = size * (radiusPct/200);
   const hubR   = size * 0.125;
 
-  /* ── Load custom font (auto-build Google Fonts URL from name) ── */
   useEffect(() => {
     if (!fontName) { setFontOk(true); return; }
     const encoded = fontName.trim().replace(/\s+/g,"+");
@@ -149,7 +148,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     link.onload = ready; ready();
   }, [fontName]);
 
-  /* ═══ Layer 2: Segments ═══ */
   const drawSegments = useCallback(() => {
     const c = segRef.current; if (!c) return;
     const ctx = c.getContext("2d");
@@ -158,25 +156,19 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     const list = prizesRef.current;
     const n = list.length; if (!n) return;
     const sweep = (2*Math.PI)/n;
-
     const FILLS = ["rgba(255,220,80,0.35)","rgba(255,200,50,0.12)"];
     const SP = { special_30:"#CC2136", special_15:"#1b459c", viral:"#64748b" };
-
     list.forEach((p,i) => {
       const start = -Math.PI/2 + i*sweep, end = start+sweep;
       let st = "normal";
       if (p.prize_type==="viral") st="viral";
       else if (p.prize_type==="special") st=(p.name||"").includes("30")?"special_30":"special_15";
-
       ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,start,end); ctx.closePath();
       ctx.fillStyle = SP[st]||FILLS[i%2]; ctx.fill();
-
       ctx.beginPath(); ctx.moveTo(cx,cy);
       ctx.lineTo(cx+outerR*Math.cos(start),cy+outerR*Math.sin(start));
       ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1.5; ctx.stroke();
     });
-
-    /* Badges */
     const ff = fontOk && fontName ? `"${fontName}",` : "";
     list.forEach((p,i) => {
       const start = -Math.PI/2+i*sweep, mid = start+sweep/2;
@@ -187,15 +179,11 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       ctx.font   = `800 ${fs}px ${ff}Arial,sans-serif`;
       const tw   = ctx.measureText(label).width;
       const padX=5,padY=3,bW=tw+padX*2,bH=fs+padY*2,bDist=outerR*0.6;
-
       let st="normal";
       if(p.prize_type==="viral")st="viral";
       else if(p.prize_type==="special")st=(p.name||"").includes("30")?"special_30":"special_15";
-
       ctx.save(); ctx.translate(cx,cy); ctx.rotate(mid);
-
       if (badgeShow) {
-        /* Badge background */
         const defaultBg = SP[st]||"#CC2136";
         const bgC = (st==="normal" && badgeColor) ? badgeColor : defaultBg;
         const bx=bDist-bW/2, by=-bH/2, r=3;
@@ -209,8 +197,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
         ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,.45)"; ctx.lineWidth=0.7; ctx.stroke();
         ctx.globalAlpha = 1;
       }
-
-      /* Text with stroke */
       ctx.textAlign="center"; ctx.textBaseline="middle";
       if (stkWidth > 0) { ctx.strokeStyle=stkColor; ctx.lineWidth=stkWidth; ctx.lineJoin="round"; ctx.strokeText(label,bDist,0); }
       ctx.fillStyle=txtColor; ctx.fillText(label,bDist,0);
@@ -218,7 +204,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     });
   }, [size,dpr,cx,cy,outerR,fontOk,fontName,txtColor,stkColor,stkWidth,badgeShow,badgeColor,badgeOp]);
 
-  /* ═══ Layer 4: Highlight ═══ */
   const drawHL = useCallback((idx,isLanded) => {
     const c = hlRef.current; if (!c) return;
     const ctx = c.getContext("2d");
@@ -228,9 +213,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     if (idx<0||idx>=n) return;
     const sweep = (2*Math.PI)/n;
     const startA = -Math.PI/2+idx*sweep, endA = startA+sweep;
-
     ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,outerR,startA,endA); ctx.closePath();
-    /* Parse hex color + apply opacity */
     const hex = hlColor.replace("#","");
     const rr=parseInt(hex.substring(0,2),16)||255, gg=parseInt(hex.substring(2,4),16)||255, bb=parseInt(hex.substring(4,6),16)||255;
     const op = isLanded ? Math.min(1,hlOpacity+0.15) : hlOpacity;
@@ -243,7 +226,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     ctx.shadowBlur=0;
   }, [size,dpr,cx,cy,outerR,hlColor,hlOpacity,hlBdColor,hlBdWidth]);
 
-  /* ═══ Init canvases ═══ */
   useEffect(() => {
     [segRef,hlRef].forEach(ref=>{ const c=ref.current; if(c){ c.width=size*dpr; c.height=size*dpr; }});
     drawSegments(); drawHL(0,false);
@@ -251,7 +233,6 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
 
   useEffect(() => { drawSegments(); drawHL(hlIdxRef.current,landedRef.current); }, [drawSegments,drawHL]);
 
-  /* ═══ Chase animation ═══ */
   useEffect(() => {
     if (!spinning||!winnerId) return;
     const list=prizesRef.current, n=list.length; if (!n) return;
@@ -297,36 +278,23 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
 
   return (
     <div style={{ position:"relative", width:size, height:size }}>
-      {/* Pointer */}
       <div style={{ position:"absolute", top:-2, left:"50%", transform:"translateX(-50%)", zIndex:30,
         width:0, height:0, borderLeft:"14px solid transparent", borderRight:"14px solid transparent",
         borderTop:"28px solid #e99849", filter:"drop-shadow(0 2px 6px rgba(0,0,0,.5))" }}/>
-
-      {/* Loading */}
       {hasBg && !loaded && (
         <div style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", borderRadius:"50%",
           background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:14, color:"#9ca3af", zIndex:1 }}>Đang tải...</div>
       )}
-
-      {/* L1: Ảnh nền + viền */}
       {hasBg && <img src={bgUrl} alt="" onLoad={()=>setLoaded(true)} draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           borderRadius:"50%", objectFit:"contain", zIndex:2,
           display:loaded?"block":"none", userSelect:"none" }}/>}
-
-      {/* L2: Segments canvas */}
       <canvas ref={segRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:5 }}/>
-
-      {/* L3: Khung trang trí (đè lên L1+L2, che viền thừa) */}
       {hasFrame && <img src={frameUrl} alt="" draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
-
-      {/* L4: Highlight canvas */}
       <canvas ref={hlRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:15 }}/>
-
-      {/* L5: Nút tâm */}
       {hasCenter ? (
         <img src={centerUrl} alt="" draggable={false}
           onLoad={()=>setCenterOk(true)}
@@ -374,26 +342,18 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
     const ringW  = Math.max(10, W * 0.045);
     const R      = outerR - ringW - 4;
     ctx.clearRect(0, 0, W, W);
-
-    // Navy outer ring
     ctx.beginPath(); ctx.arc(cx, cy, outerR, 0, 2*Math.PI);
     const navyG = ctx.createRadialGradient(cx-outerR*.25,cy-outerR*.25,0,cx,cy,outerR);
     navyG.addColorStop(0,"#2a5cc4"); navyG.addColorStop(.6,"#1b459c"); navyG.addColorStop(1,"#0d2d6b");
     ctx.fillStyle = navyG; ctx.fill();
-
-    // Gold ring
     ctx.beginPath(); ctx.arc(cx, cy, R+6, 0, 2*Math.PI);
     const gR = ctx.createLinearGradient(cx-R,cy-R,cx+R,cy+R);
     gR.addColorStop(0,"#FFE566"); gR.addColorStop(.5,"#e99849"); gR.addColorStop(1,"#FFE566");
     ctx.fillStyle = gR; ctx.fill();
-
-    // Yellow base
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2*Math.PI);
     const yB = ctx.createRadialGradient(cx,cy,0,cx,cy,R);
     yB.addColorStop(0,"#FFE84A"); yB.addColorStop(.5,"#FFD020"); yB.addColorStop(1,"#FF9500");
     ctx.fillStyle = yB; ctx.fill();
-
-    // Special segment overlays
     const SEG_COLORS = {
       special_30:{bg:"#CC2136",badge:"#8B0000",text:"#FFD700"},
       special_15:{bg:"#1b459c",badge:"#0D2D6B",text:"#FFD700"},
@@ -409,15 +369,11 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
       ctx.save(); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R,s,e); ctx.closePath();
       ctx.fillStyle = SEG_COLORS[segType].bg; ctx.fill(); ctx.restore();
     });
-
-    // Dividers
     segs.forEach(({ start }) => {
       ctx.beginPath(); ctx.moveTo(cx,cy);
       ctx.lineTo(cx+R*Math.cos(start+rot), cy+R*Math.sin(start+rot));
       ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1.5; ctx.stroke();
     });
-
-    // Badges
     segs.forEach(({ start, sweep, prize_type, name, short_name }) => {
       if (sweep<0.05) return;
       const mid=start+rot+sweep/2;
@@ -439,8 +395,6 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
       ctx.fillStyle=col.text; ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.fillText(label,bCx,0); ctx.restore();
     });
-
-    // Hub
     const hubR = Math.max(14, R*0.13);
     const chrG = ctx.createRadialGradient(cx-hubR*.3,cy-hubR*.3,1,cx,cy,hubR+8);
     chrG.addColorStop(0,"#f0f0f0"); chrG.addColorStop(.35,"#c8c8c8"); chrG.addColorStop(.7,"#888"); chrG.addColorStop(1,"#aaa");
@@ -451,8 +405,6 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
     ctx.beginPath(); ctx.arc(cx,cy,hubR,0,2*Math.PI); ctx.fillStyle=blG; ctx.fill();
     ctx.beginPath(); ctx.arc(cx-hubR*.28,cy-hubR*.3,hubR*.28,0,2*Math.PI);
     ctx.fillStyle="rgba(255,255,255,.35)"; ctx.fill();
-
-    // Pointer
     ctx.save(); ctx.translate(cx,5);
     ctx.beginPath(); ctx.moveTo(0,17); ctx.lineTo(-11,-1); ctx.lineTo(11,-1); ctx.closePath();
     const pG = ctx.createLinearGradient(0,-1,0,17);
@@ -690,7 +642,6 @@ function CustomerPage({ onAdmin }) {
   return (
     <div style={{minHeight:"100vh",...bgStyle}}>
       <style>{G}</style>
-      {/* Header */}
       <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <div style={{fontSize:24,fontWeight:900,color:"#fff",fontFamily:"'Nunito',sans-serif",letterSpacing:1}}>
@@ -700,12 +651,10 @@ function CustomerPage({ onAdmin }) {
             {settings.event_subtitle||"Vòng Quay May Mắn"}
           </div>
         </div>
-        <div onClick={onAdmin} style={{fontSize:11,color:"rgba(255,255,255,.3)",cursor:"default",userSelect:"none"}}>v2</div>
+        <div onClick={onAdmin} style={{fontSize:11,color:"rgba(255,255,255,.3)",cursor:"default",userSelect:"none"}}>v3</div>
       </div>
 
-      {/* Main */}
       <div style={{display:"flex",flexWrap:"wrap",minHeight:"calc(100vh - 80px - 60px)"}}>
-        {/* LEFT */}
         <div style={{flex:"1 1 320px",padding:"28px 24px",background:"rgba(255,255,255,.92)",borderRight:"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
             ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
@@ -764,7 +713,6 @@ function CustomerPage({ onAdmin }) {
           <div style={{fontSize:11,color:"#a8a29e",textAlign:"center"}}>Mỗi mã bill chỉ dùng được 1 lần</div>
         </div>
 
-        {/* RIGHT */}
         <div style={{flex:"1 1 320px",padding:"28px 20px",background:"rgba(255,247,237,.7)",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
           <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"#F0F0F0",borderRadius:50,padding:"8px 22px",fontSize:16,fontWeight:800,
             color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
@@ -816,7 +764,6 @@ function CustomerPage({ onAdmin }) {
         </div>
       </div>
 
-      {/* Leaderboard */}
       <div style={{background:"rgba(255,255,255,.95)",borderTop:"2px solid #e99849",padding:"28px 24px"}}>
         <div style={{maxWidth:900,margin:"0 auto"}}>
           <div style={{fontSize:20,fontWeight:900,color:"#1b459c",marginBottom:4,fontFamily:"'Nunito',sans-serif"}}>🐱 Bảng xếp hạng cửa hàng</div>
@@ -857,7 +804,7 @@ function CustomerPage({ onAdmin }) {
   );
 }
 
-/* ─── TEST MODE PANEL ─── */
+/* ─── TEST MODE PANEL (PHẢI trước AdminPage) ─── */
 function buildTestSequence(prizes) {
   if(!prizes.length) return [];
   const seq=[...prizes];
@@ -928,7 +875,7 @@ function TestModePanel({ allPrizes }) {
   );
 }
 
-/* ─── VOUCHER DETAIL PANEL ─── */
+/* ─── VOUCHER DETAIL PANEL (PHẢI trước AdminPage) ─── */
 function VoucherDetailPanel({ prizes }) {
   const [selPrize,setSelPrize]=useState("");
   const [items,setItems]=useState([]);
@@ -1014,13 +961,14 @@ function VoucherDetailPanel({ prizes }) {
   );
 }
 
-/* ─── ADMIN PAGE ─── */
-const ADMIN_TOKEN = typeof btoa!=="undefined" ? btoa(ADMIN_PWD+"_st26") : "";
-
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PAGE — Google OAuth + allowed_emails (giống feedback app)
+   ═══════════════════════════════════════════════════════════════ */
 function AdminPage({ onBack }) {
-  const [authed, setAuthed] = useState(false);
-  const [pwd,    setPwd]    = useState("");
-  const [pwdErr, setPwdErr] = useState("");
+  /* ── Auth state ── */
+  const [user,         setUser]         = useState(null);
+  const [userRole,     setUserRole]     = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
   const [tab,     setTab]    = useState("settings");
   const [loading, setLoading]= useState(false);
@@ -1045,15 +993,57 @@ function AdminPage({ onBack }) {
   });
   const [settingsSaved, setSettingsSaved] = useState("");
 
-  useEffect(()=>{
-    try{ if(localStorage.getItem("santhai_admin_v2")===ADMIN_TOKEN)setAuthed(true); }catch{}
-  },[]);
+  /* ── Auth: check session + role on mount ── */
+  useEffect(() => {
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        checkEmailAccess(session.user.email).then(access => {
+          if (access && (access.role === "super_admin" || access.role === "admin")) {
+            setUserRole(access.role);
+          }
+          setAuthChecking(false);
+        });
+      } else {
+        setAuthChecking(false);
+      }
+    });
 
-  const doLogin=()=>{
-    if(pwd===ADMIN_PWD){ localStorage.setItem("santhai_admin_v2",ADMIN_TOKEN); setAuthed(true); }
-    else setPwdErr("Sai mật khẩu");
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        checkEmailAccess(session.user.email).then(access => {
+          if (access && (access.role === "super_admin" || access.role === "admin")) {
+            setUserRole(access.role);
+          } else {
+            setUserRole(null);
+          }
+          setAuthChecking(false);
+        });
+      } else {
+        setUser(null);
+        setUserRole(null);
+        setAuthChecking(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const doLogin = () => {
+    supabaseClient.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/#admin" },
+    });
   };
-  const doLogout=()=>{ localStorage.removeItem("santhai_admin_v2"); window.location.replace(window.location.origin); };
+
+  /* Logout SYNC — rule từ feedback app */
+  const doLogout = () => {
+    try { supabaseClient.auth.signOut(); } catch(e) {}
+    try { localStorage.clear(); } catch(e) {}
+    try { sessionStorage.clear(); } catch(e) {}
+    window.location.replace(window.location.origin);
+  };
 
   const TABS=[
     {id:"settings",  label:"⚙️ Cài đặt"},
@@ -1077,7 +1067,6 @@ function AdminPage({ onBack }) {
       ]);
       setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
       setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
-      /* Aggregate vouchers by prize */
       if (Array.isArray(v)&&v.length>0) {
         const map = {};
         v.forEach(r => {
@@ -1087,7 +1076,7 @@ function AdminPage({ onBack }) {
           else if (r.status==="assigned") map[k].assigned++;
           else if (r.status==="redeemed") map[k].redeemed++;
           else if (r.status==="voided")   map[k].voided++;
-          else map[k].total++; // fallback
+          else map[k].total++;
         });
         setVouchers(Object.values(map));
       } else { setVouchers([]); }
@@ -1096,30 +1085,86 @@ function AdminPage({ onBack }) {
     setLoading(false);
   },[date]);
 
-  useEffect(()=>{ if(authed)loadAll(); },[authed,loadAll]);
+  useEffect(()=>{ if(userRole)loadAll(); },[userRole,loadAll]);
+
+  /* ── REORDER PRIZES: di chuyển lên/xuống ── */
+  const movePrize = async (idx, dir) => {
+    const arr = [...prizes];
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= arr.length) return;
+    // Swap display_order values
+    const tempOrder = arr[idx].display_order;
+    arr[idx].display_order = arr[targetIdx].display_order;
+    arr[targetIdx].display_order = tempOrder;
+    // Swap positions in array
+    [arr[idx], arr[targetIdx]] = [arr[targetIdx], arr[idx]];
+    setPrizes(arr);
+    // Save to DB
+    await updatePrizesOrder([
+      { id: arr[idx].id, display_order: arr[idx].display_order },
+      { id: arr[targetIdx].id, display_order: arr[targetIdx].display_order },
+    ]);
+  };
 
   const inp={border:"1px solid #d1d5db",borderRadius:8,padding:"8px 12px",fontSize:14,color:"#1c1917",background:"#fff",fontFamily:"inherit"};
   const th={padding:"8px 12px",textAlign:"left",fontSize:12,fontWeight:700,color:"#6b7280",borderBottom:"1px solid #e5e7eb",whiteSpace:"nowrap"};
   const td={padding:"8px 12px",borderBottom:"1px solid #f3f4f6",fontSize:13,verticalAlign:"middle"};
+  const arrowBtn = (disabled) => ({
+    padding:"2px 7px", fontSize:14, border:"1px solid #d1d5db", borderRadius:6,
+    background:disabled?"#f3f4f6":"#fff", color:disabled?"#d1d5db":"#374151",
+    cursor:disabled?"not-allowed":"pointer", fontWeight:900, lineHeight:1,
+  });
 
-  if(!authed) return (
+  /* ── LOADING STATE ── */
+  if(authChecking) return (
     <div style={{minHeight:"100vh",background:"#F5F0E8",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <style>{G}</style>
-      <div style={{background:"#fff",borderRadius:20,padding:32,maxWidth:360,width:"100%",boxShadow:"0 8px 32px rgba(0,0,0,.12)"}}>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:40,marginBottom:8}}>🎰</div>
-          <div style={{fontSize:22,fontWeight:900,color:"#1b459c",fontFamily:"'Nunito',sans-serif"}}>Admin — SanThai Spin</div>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:12,animation:"spin 1s linear infinite"}}>⏳</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#78716c"}}>Đang kiểm tra đăng nhập…</div>
+      </div>
+    </div>
+  );
+
+  /* ── LOGIN SCREEN ── */
+  if(!user) return (
+    <div style={{minHeight:"100vh",background:"#F5F0E8",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <style>{G}</style>
+      <div style={{background:"#fff",borderRadius:20,padding:32,maxWidth:380,width:"100%",boxShadow:"0 8px 32px rgba(0,0,0,.12)",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:8}}>🎰</div>
+        <div style={{fontSize:22,fontWeight:900,color:"#1b459c",fontFamily:"'Nunito',sans-serif",marginBottom:6}}>Admin — SanThai Spin</div>
+        <div style={{fontSize:13,color:"#78716c",marginBottom:24}}>Đăng nhập bằng Google để tiếp tục</div>
+        <button onClick={doLogin} style={{width:"100%",padding:"13px",background:"#fff",border:"2px solid #e5e7eb",borderRadius:12,fontSize:16,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,color:"#1c1917",transition:"border-color .2s,box-shadow .2s"}}>
+          <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Đăng nhập bằng Google
+        </button>
+        <button onClick={onBack} style={{width:"100%",marginTop:12,padding:"10px",background:"#f1f5f9",border:"none",borderRadius:12,color:"#374151",fontWeight:700,cursor:"pointer"}}>← Quay lại</button>
+      </div>
+    </div>
+  );
+
+  /* ── ACCESS DENIED ── */
+  if(!userRole) return (
+    <div style={{minHeight:"100vh",background:"#F5F0E8",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <style>{G}</style>
+      <div style={{background:"#fff",borderRadius:20,padding:32,maxWidth:400,width:"100%",boxShadow:"0 8px 32px rgba(0,0,0,.12)",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:8}}>🚫</div>
+        <div style={{fontSize:20,fontWeight:900,color:"#dc2626",marginBottom:8}}>Không có quyền truy cập</div>
+        <div style={{fontSize:14,color:"#6b7280",marginBottom:8,lineHeight:1.6}}>
+          Email <strong style={{color:"#1c1917"}}>{user.email}</strong> chưa được cấp quyền admin.
         </div>
-        <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&doLogin()} placeholder="Mật khẩu admin"
-          style={{...inp,width:"100%",marginBottom:12}}/>
-        {pwdErr&&<div style={{color:"#dc2626",fontSize:13,marginBottom:8}}>{pwdErr}</div>}
-        <button onClick={doLogin} style={{width:"100%",padding:"12px",background:"linear-gradient(135deg,#e99849,#d4822a)",border:"none",borderRadius:12,color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer"}}>Đăng nhập</button>
+        <div style={{fontSize:13,color:"#9ca3af",marginBottom:20}}>
+          Liên hệ Super Admin (<strong>{SUPER_ADMIN}</strong>) để được thêm quyền.
+        </div>
+        <button onClick={doLogout} style={{width:"100%",padding:"12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:12,color:"#dc2626",fontWeight:700,cursor:"pointer",fontSize:15}}>
+          Đăng xuất
+        </button>
         <button onClick={onBack} style={{width:"100%",marginTop:10,padding:"10px",background:"#f1f5f9",border:"none",borderRadius:12,color:"#374151",fontWeight:700,cursor:"pointer"}}>← Quay lại</button>
       </div>
     </div>
   );
 
+  /* ═══ ADMIN DASHBOARD ═══ */
   return (
     <div style={{minHeight:"100vh",background:"#F5F0E8"}}>
       <style>{G}</style>
@@ -1127,6 +1172,7 @@ function AdminPage({ onBack }) {
         <div style={{fontSize:18,fontWeight:900,color:"#fff",fontFamily:"'Nunito',sans-serif"}}>🎰 Admin — SanThai Spin</div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {dbStatus==="ok"?<span style={{fontSize:12,color:"rgba(255,255,255,.8)"}}>✅ DB</span>:<span style={{fontSize:12,color:"#fecaca"}}>❌ DB lỗi</span>}
+          <span style={{fontSize:12,color:"rgba(255,255,255,.7)",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</span>
           <button onClick={loadAll} disabled={loading} style={{padding:"6px 14px",background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700}}>
             {loading?"⏳":"🔄"} Làm mới
           </button>
@@ -1167,31 +1213,24 @@ function AdminPage({ onBack }) {
               </div>
             ))}
 
-            {/* ── TÙY CHỈNH VÒNG QUAY (5 LAYERS) ── */}
             <h3 style={{fontSize:16,fontWeight:900,margin:"28px 0 8px",borderTop:"2px solid #e5e7eb",paddingTop:20}}>🎡 Tùy chỉnh vòng quay</h3>
             <div style={{fontSize:12,color:"#9ca3af",marginBottom:16}}>Điền URL ảnh Layer 1 để kích hoạt chế độ custom (thay vì canvas mặc định)</div>
 
-            {/* Layer 1 */}
             <div style={{background:"#fffbeb",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #fde68a"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#92400e"}}>Layer 1 — Ảnh nền bánh xe</div>
               <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG/JPG, 800×800px | Chỉ viền + nền gradient, KHÔNG có text giải thưởng</div>
               <input type="text" value={adminSettings.wheel_image_url||""} onChange={e=>setAdminSettings(p=>({...p,wheel_image_url:e.target.value}))} placeholder="https://..." style={{...inp,width:"100%"}}/>
             </div>
 
-            {/* Layer 2 */}
             <div style={{background:"#eff6ff",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bfdbfe"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#1e40af"}}>Layer 2 — Text giải thưởng</div>
               <div style={{fontSize:11,color:"#6b7280",marginBottom:8}}>Code tự vẽ chia ngăn + text. Custom font để hiển thị tiếng Việt đẹp.</div>
-
-              {/* Font — chỉ cần tên */}
               <div style={{marginBottom:10}}>
                 <label style={{fontSize:12,fontWeight:600,color:"#374151"}}>Tên font (Google Fonts)</label>
                 <input type="text" value={adminSettings.seg_font_name||""} onChange={e=>setAdminSettings(p=>({...p,seg_font_name:e.target.value}))}
                   placeholder="Be Vietnam Pro" style={{...inp,width:"100%",marginTop:2}}/>
                 <div style={{fontSize:11,color:"#9ca3af"}}>Tìm tại <a href="https://fonts.google.com" target="_blank" rel="noreferrer" style={{color:"#3b82f6"}}>fonts.google.com</a> → copy tên font. Để trống = Arial mặc định</div>
               </div>
-
-              {/* Màu text + viền */}
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 {[
                   {key:"seg_text_color",   label:"Màu text",       def:"#FFFFFF"},
@@ -1211,8 +1250,6 @@ function AdminPage({ onBack }) {
                   <div style={{fontSize:11,color:"#9ca3af"}}>0 = không viền, 1-4 = nhẹ → đậm</div>
                 </div>
               </div>
-
-              {/* Badge */}
               <div style={{borderTop:"1px solid #dbeafe",paddingTop:10,marginTop:6}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#1e40af",marginBottom:6}}>Badge (nền chữ)</div>
                 <label style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:8,color:"#374151"}}>
@@ -1237,14 +1274,12 @@ function AdminPage({ onBack }) {
               </div>
             </div>
 
-            {/* Layer 3 */}
             <div style={{background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bbf7d0"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#166534"}}>Layer 3 — Khung trang trí</div>
               <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG trong suốt, 800×800px | Chỉ phần viền/khung, tâm trong suốt. Đè lên L1+L2, che viền thừa.</div>
               <input type="text" value={adminSettings.frame_image_url||""} onChange={e=>setAdminSettings(p=>({...p,frame_image_url:e.target.value}))} placeholder="https://..." style={{...inp,width:"100%"}}/>
             </div>
 
-            {/* Layer 4 */}
             <div style={{background:"#fefce8",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #fef08a"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#854d0e"}}>Layer 4 — Highlight chase</div>
               <div style={{fontSize:11,color:"#6b7280",marginBottom:8}}>Ô sáng chạy quanh rồi dừng ở giải trúng. Hiện ngay từ đầu ở ô 0.</div>
@@ -1275,7 +1310,6 @@ function AdminPage({ onBack }) {
               </div>
             </div>
 
-            {/* Layer 5 */}
             <div style={{background:"#faf5ff",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #e9d5ff"}}>
               <div style={{fontSize:13,fontWeight:800,marginBottom:8,color:"#7e22ce"}}>Layer 5 — Nút tâm</div>
               <div style={{fontSize:11,color:"#78716c",marginBottom:8}}>📐 PNG trong suốt, 200×200px, hình tròn. Để trống → dùng nút gradient mặc định.</div>
@@ -1307,7 +1341,7 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
-        {/* ── CẤU HÌNH GIẢI ── */}
+        {/* ── CẤU HÌNH GIẢI (+ REORDER ▲▼) ── */}
         {tab==="prizes"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -1322,12 +1356,19 @@ function AdminPage({ onBack }) {
             <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{background:"#f9fafb"}}>
-                  {["Tên giải","Short name","Loại","Xác suất %","Voucher","Icon","Active",""].map(h=><th key={h} style={th}>{h}</th>)}
+                  {["Vị trí","Tên giải","Short name","Loại","Xác suất %","Voucher","Icon","Active",""].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {prizes.length===0 ? <tr><td colSpan={8} style={{...td,textAlign:"center",color:"#9ca3af"}}>Chưa có giải — nhấn Load giải mặc định</td></tr>
-                  : prizes.map(p=>(
+                  {prizes.length===0 ? <tr><td colSpan={9} style={{...td,textAlign:"center",color:"#9ca3af"}}>Chưa có giải — nhấn Load giải mặc định</td></tr>
+                  : prizes.map((p,idx)=>(
                     <tr key={p.id}>
+                      <td style={{...td,whiteSpace:"nowrap"}}>
+                        <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                          <button onClick={()=>movePrize(idx,-1)} disabled={idx===0} style={arrowBtn(idx===0)} title="Di lên">▲</button>
+                          <button onClick={()=>movePrize(idx,1)} disabled={idx===prizes.length-1} style={arrowBtn(idx===prizes.length-1)} title="Di xuống">▼</button>
+                          <span style={{fontSize:12,color:"#9ca3af",marginLeft:4,minWidth:18,textAlign:"center"}}>{idx+1}</span>
+                        </div>
+                      </td>
                       <td style={{...td,fontWeight:700}}>{p.name}</td>
                       <td style={{...td,color:"#6b7280",fontSize:12}}>{p.short_name||"—"}</td>
                       <td style={td}><span style={{background:p.prize_type==="special"?"#fef3c7":p.prize_type==="viral"?"#f3f4f6":"#f0fdf4",color:p.prize_type==="special"?"#92400e":p.prize_type==="viral"?"#374151":"#065f46",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{p.prize_type}</span></td>
@@ -1465,10 +1506,8 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
-        {/* ── CHI TIẾT VOUCHER ── */}
         {tab==="vdetail"&&<VoucherDetailPanel prizes={prizes}/>}
 
-        {/* ── TEST MODE ── */}
         {tab==="test"&&(
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -1487,7 +1526,6 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
-        {/* ── GIẢI ĐẶC BIỆT ── */}
         {tab==="special"&&(
           <div>
             <h3 style={{fontSize:16,fontWeight:900,marginBottom:16}}>🏆 Giải đặc biệt</h3>
@@ -1520,7 +1558,6 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
-        {/* ── BLACKLIST ── */}
         {tab==="blacklist"&&(
           <div>
             <h3 style={{fontSize:16,fontWeight:900,marginBottom:16}}>🚫 Blacklist</h3>
@@ -1564,10 +1601,7 @@ function ImportVouchers({ prizes, onDone }) {
         <label style={{fontSize:13,fontWeight:700,display:"block",marginBottom:4}}>Loại phần thưởng cần nạp</label>
         <select value={prizeId} onChange={e=>setPrizeId(e.target.value)} style={{...inp,width:"100%"}}>
           <option value="">-- Chọn giải --</option>
-          {activePrizes.map(p=>{
-            const pool=prizes.filter?undefined:undefined;
-            return <option key={p.id} value={p.id}>{p.name}</option>;
-          })}
+          {activePrizes.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
       <div style={{marginBottom:10}}>
@@ -1617,9 +1651,9 @@ function genTestVoucherXLS(prizes) {
 
 /* ─── APP ROOT ─── */
 export default function App() {
-  const [admin, setAdmin] = useState(() => typeof window !== "undefined" && window.location.hash === "#admin");
+  const [admin, setAdmin] = useState(() => typeof window !== "undefined" && window.location.hash.includes("admin"));
   useEffect(() => {
-    const onHash = () => setAdmin(window.location.hash === "#admin");
+    const onHash = () => setAdmin(window.location.hash.includes("admin"));
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
