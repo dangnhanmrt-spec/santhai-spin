@@ -1,8 +1,30 @@
-// supabase.js — SanThai Spin v2
+// supabase.js — SanThai Spin v3 (+ Google OAuth Auth)
+import { createClient } from "@supabase/supabase-js";
+
 const SUPA_URL = "https://stxymyjwxdtfxkvmsgmz.supabase.co";
 const KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0eHlteWp3eGR0Znhrdm1zZ216Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Nzg4ODIsImV4cCI6MjA5MjQ1NDg4Mn0.dxF-84q5CSoT21b__zq8XgUfyRuSAwIov9PL269WWm4";
 const H    = { apikey:KEY, Authorization:`Bearer ${KEY}`, "Content-Type":"application/json" };
 
+/* ═══ SUPABASE AUTH CLIENT ═══ */
+export const supabaseClient = createClient(SUPA_URL, KEY);
+
+/* ═══ AUTH HELPERS ═══ */
+export async function checkEmailAccess(email) {
+  // Dùng raw fetch + maybeSingle pattern (tránh throw khi không tìm thấy)
+  try {
+    const r = await fetch(
+      `${SUPA_URL}/rest/v1/allowed_emails?email=eq.${encodeURIComponent(email)}&limit=1`,
+      { headers: H }
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/* ═══ RAW FETCH HELPERS (giữ nguyên) ═══ */
 async function rpc(fn, params) {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, { method:"POST", headers:H, body:JSON.stringify(params) });
@@ -105,8 +127,6 @@ export async function savePrize(prize) {
   }
 }
 
-
-// Kiểm tra bảng spin_prizes đã tồn tại chưa
 export async function testConnection() {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?limit=1`, { headers: H });
@@ -116,8 +136,6 @@ export async function testConnection() {
   } catch { return { ok: false, error: "network" }; }
 }
 
-
-// Reset về 16 giải mặc định
 export async function resetDefaultPrizes() {
   const defaults = [
     { id:1,  name:"Thẻ 30 ngày",       short_name:"30 ngày",   color:"#ef4444", icon:"🏆", probability:0.50,  prize_type:"special", has_voucher:false, active:true, display_order:1  },
@@ -160,7 +178,7 @@ export async function loadStoreStats() {
   return get("store_spin_stats", "limit=100");
 }
 
-// ─── STORES (from feedback app stores table) ───
+// ─── STORES ───
 export async function loadStores() {
   const r = await get("stores", "active=eq.true&order=name&limit=200");
   return r.length > 0 ? r : [];
@@ -212,7 +230,7 @@ export async function updateSpecialStatus(id, status, note="") {
   return patch("spin_special_winners", `id=eq.${id}`, { contact_status:status, staff_note:note });
 }
 
-// ─── VOUCHER DETAIL MANAGEMENT ───
+// ─── VOUCHER DETAIL ───
 export async function loadPrizeVouchers(prizeId, status = null) {
   const f = status ? `&status=eq.${status}` : "";
   return get("spin_vouchers", `prize_id=eq.${prizeId}&order=created_at.desc&limit=500${f}`);
@@ -235,7 +253,6 @@ export async function loadSettings() {
 }
 
 export async function saveSetting(key, value) {
-  // Dùng RPC SECURITY DEFINER — bypass mọi permission/RLS issue
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/rpc/upsert_setting`, {
       method: "POST",
