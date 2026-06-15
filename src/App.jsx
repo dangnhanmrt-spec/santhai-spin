@@ -6,6 +6,7 @@ import {
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
   loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
+  loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
 } from "./supabase.js";
 
 /* ─── CONSTANTS ─── */
@@ -961,6 +962,155 @@ function VoucherDetailPanel({ prizes }) {
   );
 }
 
+/* ─── EDIT PRIZE MODAL ─── */
+
+/* ─── ACCESS MANAGEMENT (super_admin) ─── */
+function AccessManagement({ emails, onReload }) {
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole]   = useState("admin");
+  const [msg, setMsg]           = useState("");
+  const [adding, setAdding]     = useState(false);
+  const inp = { border:"1px solid #d1d5db", borderRadius:8, padding:"8px 12px", fontSize:14, color:"#1c1917", background:"#fff" };
+  const th = { padding:"8px 12px", textAlign:"left", fontSize:12, fontWeight:700, color:"#6b7280", borderBottom:"1px solid #e5e7eb", whiteSpace:"nowrap" };
+  const td = { padding:"8px 12px", borderBottom:"1px solid #f3f4f6", fontSize:13, verticalAlign:"middle" };
+
+  const handleAdd = async () => {
+    if (!newEmail.trim() || !newEmail.includes("@")) return setMsg("❌ Email không hợp lệ");
+    setAdding(true); setMsg("");
+    const res = await addAllowedEmail(newEmail.trim(), newRole);
+    setAdding(false);
+    if (res.ok) { setNewEmail(""); setMsg("✅ Đã thêm"); setTimeout(()=>setMsg(""),3000); onReload(); }
+    else setMsg("❌ " + (res.error || "Lỗi"));
+  };
+
+  return (
+    <div>
+      <h3 style={{fontSize:16,fontWeight:900,marginBottom:8}}>👥 Quản lý quyền truy cập</h3>
+      <div style={{fontSize:13,color:"#6b7280",marginBottom:16}}>Thêm/xóa email được phép truy cập Admin. Dùng chung bảng <code>allowed_emails</code> với Feedback app.</div>
+
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}}>
+        <div>
+          <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:4}}>Email</label>
+          <input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@gmail.com" style={{...inp,width:260}}
+            onKeyDown={e=>e.key==="Enter"&&handleAdd()}/>
+        </div>
+        <div>
+          <label style={{fontSize:12,fontWeight:700,display:"block",marginBottom:4}}>Vai trò</label>
+          <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{...inp,width:150}}>
+            <option value="admin">Admin</option>
+            <option value="super_admin">Super Admin</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+        <button onClick={handleAdd} disabled={adding||!newEmail.trim()} style={{padding:"9px 18px",background:newEmail.trim()?"linear-gradient(135deg,#e99849,#d4822a)":"#e5e7eb",border:"none",borderRadius:8,color:newEmail.trim()?"#fff":"#9ca3af",fontWeight:700,cursor:newEmail.trim()?"pointer":"not-allowed",fontSize:14}}>
+          {adding?"⏳":"+"} Thêm
+        </button>
+        {msg&&<span style={{fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"#10b981":"#dc2626"}}>{msg}</span>}
+      </div>
+
+      <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{background:"#f9fafb"}}>
+            {["Email","Vai trò","Ngày thêm",""].map(h=><th key={h} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {emails.length===0 ? <tr><td colSpan={4} style={{...td,textAlign:"center",color:"#9ca3af"}}>Chưa có email nào</td></tr>
+            : emails.map(e=>(
+              <tr key={e.id}>
+                <td style={{...td,fontWeight:700}}>{e.email}</td>
+                <td style={td}><span style={{background:e.role==="super_admin"?"#fef3c7":e.role==="admin"?"#f0fdf4":"#f3f4f6",color:e.role==="super_admin"?"#92400e":e.role==="admin"?"#065f46":"#374151",borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{e.role}</span></td>
+                <td style={{...td,fontSize:12,color:"#9ca3af"}}>{e.created_at?new Date(e.created_at).toLocaleDateString("vi-VN"):"—"}</td>
+                <td style={td}>
+                  {e.email!==SUPER_ADMIN&&<button onClick={async()=>{if(!confirm(`Xóa quyền của ${e.email}?`))return;await removeAllowedEmail(e.id);onReload();}} style={{padding:"3px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:12}}>🗑</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function EditPrizeModal({ prize, onSave, onClose }) {
+  const [form, setForm] = useState({ ...prize });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const inp = { border:"1px solid #d1d5db", borderRadius:8, padding:"8px 12px", fontSize:14, color:"#1c1917", background:"#fff", width:"100%" };
+
+  const handleSave = async () => {
+    if (!form.name?.trim()) return setErr("Tên giải không được trống");
+    setSaving(true); setErr("");
+    const res = await savePrize(form);
+    setSaving(false);
+    if (res.ok) onSave();
+    else setErr(res.error || "Lỗi khi lưu");
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:20,padding:28,maxWidth:480,width:"100%",boxShadow:"0 16px 48px rgba(0,0,0,.2)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:18,fontWeight:900,color:"#1b459c"}}>✏️ Chỉnh sửa giải thưởng</div>
+          <button onClick={onClose} style={{background:"#f1f5f9",border:"none",borderRadius:"50%",width:32,height:32,fontSize:16,cursor:"pointer",color:"#64748b"}}>✕</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Tên giải *</label>
+            <input value={form.name||""} onChange={e=>upd("name",e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Short name (hiển thị trên bánh xe)</label>
+            <input value={form.short_name||""} onChange={e=>upd("short_name",e.target.value)} placeholder="Tối đa 8-10 ký tự" style={inp}/>
+          </div>
+          <div style={{display:"flex",gap:12}}>
+            <div style={{flex:1}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Loại giải</label>
+              <select value={form.prize_type||"normal"} onChange={e=>upd("prize_type",e.target.value)} style={inp}>
+                <option value="normal">normal</option>
+                <option value="special">special</option>
+                <option value="viral">viral</option>
+              </select>
+            </div>
+            <div style={{flex:1}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Xác suất (%)</label>
+              <input type="number" step="0.1" min="0" max="100" value={form.probability||0} onChange={e=>upd("probability",parseFloat(e.target.value)||0)} style={inp}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:12}}>
+            <div style={{flex:1}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Icon (emoji)</label>
+              <input value={form.icon||""} onChange={e=>upd("icon",e.target.value)} placeholder="🎁" style={inp}/>
+            </div>
+            <div style={{flex:1}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Thứ tự hiển thị</label>
+              <input type="number" min="0" value={form.display_order||0} onChange={e=>upd("display_order",parseInt(e.target.value)||0)} style={inp}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:20}}>
+            <label style={{fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:"#374151"}}>
+              <input type="checkbox" checked={!!form.has_voucher} onChange={e=>upd("has_voucher",e.target.checked)} style={{width:16,height:16}}/>
+              Có voucher
+            </label>
+            <label style={{fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:"#374151"}}>
+              <input type="checkbox" checked={form.active!==false} onChange={e=>upd("active",e.target.checked)} style={{width:16,height:16}}/>
+              Active
+            </label>
+          </div>
+        </div>
+        {err&&<div style={{marginTop:12,color:"#dc2626",fontSize:13,fontWeight:700}}>{err}</div>}
+        <div style={{display:"flex",gap:10,marginTop:20}}>
+          <button onClick={handleSave} disabled={saving} style={{flex:1,padding:"12px",background:"linear-gradient(135deg,#e99849,#d4822a)",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:800,cursor:saving?"not-allowed":"pointer"}}>
+            {saving?"⏳ Đang lưu…":"💾 Lưu thay đổi"}
+          </button>
+          <button onClick={onClose} style={{padding:"12px 20px",background:"#f1f5f9",border:"none",borderRadius:12,color:"#374151",fontWeight:700,cursor:"pointer"}}>Hủy</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PAGE — Google OAuth + allowed_emails (giống feedback app)
    ═══════════════════════════════════════════════════════════════ */
@@ -992,6 +1142,9 @@ function AdminPage({ onBack }) {
     wheel_seg_radius:"93"
   });
   const [settingsSaved, setSettingsSaved] = useState("");
+  const [editingPrize, setEditingPrize] = useState(null);
+  const [allowedEmails, setAllowedEmails] = useState([]);
+  const [suspiciousPhones, setSuspiciousPhones] = useState([]);
 
   /* ── Auth: check session + role on mount ── */
   useEffect(() => {
@@ -1056,6 +1209,7 @@ function AdminPage({ onBack }) {
     {id:"test",      label:"🧪 Test Mode"},
     {id:"special",   label:"🏆 Giải đặc biệt"},
     {id:"blacklist", label:"🚫 Blacklist"},
+    ...(userRole==="super_admin"?[{id:"access", label:"👥 Phân quyền"}]:[]),
   ];
 
   const loadAll=useCallback(async()=>{
@@ -1082,6 +1236,17 @@ function AdminPage({ onBack }) {
         setVouchers(Object.values(map));
       } else { setVouchers([]); }
       if(cfg&&Object.keys(cfg).length) setAdminSettings(prev=>({...prev,...cfg}));
+      // Load allowed emails (for super_admin tab)
+      if(userRole==="super_admin") {
+        const emails = await loadAllowedEmails();
+        setAllowedEmails(Array.isArray(emails)?emails:[]);
+      }
+      // Detect suspicious phones: 5+ spins same day
+      if(Array.isArray(s)&&s.length>0){
+        const phoneCount={};
+        s.forEach(r=>{ const ph=r.phone; if(ph){ phoneCount[ph]=(phoneCount[ph]||0)+1; } });
+        setSuspiciousPhones(Object.entries(phoneCount).filter(([,c])=>c>=5).map(([ph,c])=>({phone:ph,count:c})));
+      } else { setSuspiciousPhones([]); }
     }
     setLoading(false);
   },[date]);
@@ -1377,7 +1542,10 @@ function AdminPage({ onBack }) {
                       <td style={td}>{p.has_voucher?"✅":"—"}</td>
                       <td style={{...td,fontSize:20}}>{p.icon}</td>
                       <td style={td}>{p.active?"🟢":"⚪"}</td>
-                      <td style={td}><button onClick={async()=>{ if(!confirm(`Xóa giải "${p.name}"?`))return; await deletePrize(p.id); loadAll(); }} style={{padding:"3px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:12}}>🗑</button></td>
+                      <td style={{...td,whiteSpace:"nowrap"}}>
+                        <button onClick={()=>setEditingPrize(p)} style={{padding:"3px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"#eff6ff",color:"#1e40af",cursor:"pointer",fontSize:12,marginRight:4}}>✏️</button>
+                        <button onClick={async()=>{ if(!confirm(`Xóa giải "${p.name}"?`))return; await deletePrize(p.id); loadAll(); }} style={{padding:"3px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:12}}>🗑</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1393,6 +1561,7 @@ function AdminPage({ onBack }) {
               <h3 style={{fontSize:16,fontWeight:900,margin:0}}>📋 Lịch sử quay</h3>
               <input type="date" value={date} onChange={e=>{setDate(e.target.value);}} style={inp}/>
               <button onClick={loadAll} style={{...inp,background:"#e99849",color:"#fff",border:"none",cursor:"pointer",fontWeight:700}}>Tìm</button>
+              {suspiciousPhones.length>0&&<span style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#dc2626",fontWeight:700}}>🚨 {suspiciousPhones.length} SĐT bất thường</span>}
               <button onClick={()=>{
                 const rows=spins.map(s=>`${s.bill_code},${s.phone},${s.store_name||s.store_id||""},${s.prize_name||""},${s.voucher_code||""},${s.is_valid?"valid":"invalid"},${s.spun_at||""}`).join("\n");
                 const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,\uFEFFBill,SĐT,Cửa hàng,Giải,Voucher,Trạng thái,Thời gian\n"+rows; a.download=`spins_${date}.csv`; a.click();
@@ -1412,6 +1581,20 @@ function AdminPage({ onBack }) {
                 </div>
               ))}
             </div>
+            {suspiciousPhones.length>0&&(
+              <div style={{background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                <div style={{fontSize:14,fontWeight:800,color:"#dc2626",marginBottom:8}}>🚨 Cảnh báo — SĐT có ≥5 lượt quay trong ngày</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  {suspiciousPhones.map(s=>(
+                    <div key={s.phone} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1px solid #fecaca",borderRadius:8,padding:"6px 12px"}}>
+                      <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14}}>{s.phone}</span>
+                      <span style={{background:"#dc2626",color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>{s.count} lượt</span>
+                      <button onClick={async()=>{if(!confirm(`Thêm ${s.phone} vào blacklist?`))return;await addBlacklist(s.phone,"Spam ≥5 lượt/ngày");loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700}}>🚫 Ban</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{background:"#f9fafb"}}>
@@ -1581,7 +1764,13 @@ function AdminPage({ onBack }) {
             </div>
           </div>
         )}
+
+        {/* ── PHÂN QUYỀN (super_admin only) ── */}
+        {tab==="access"&&userRole==="super_admin"&&(
+          <AccessManagement emails={allowedEmails} onReload={loadAll}/>
+        )}
       </div>
+      {editingPrize&&<EditPrizeModal prize={editingPrize} onClose={()=>setEditingPrize(null)} onSave={()=>{setEditingPrize(null);loadAll();}}/>}
     </div>
   );
 }
