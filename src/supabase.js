@@ -245,6 +245,31 @@ export async function bulkDeleteVouchers(ids) {
   return remove("spin_vouchers", `id=in.(${ids.join(",")})`);
 }
 
+// ─── ALLOWED EMAILS (quản lý quyền truy cập) ───
+export async function loadAllowedEmails() {
+  return get("allowed_emails", "order=created_at.desc&limit=100");
+}
+
+export async function addAllowedEmail(email, role) {
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/allowed_emails`, {
+      method: "POST",
+      headers: { ...H, Prefer: "return=representation" },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), role }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      if (t.includes("duplicate") || t.includes("unique")) return { ok: false, error: "Email đã tồn tại" };
+      return { ok: false, error: `Lỗi ${r.status}` };
+    }
+    return { ok: true };
+  } catch { return { ok: false, error: "Lỗi mạng" }; }
+}
+
+export async function removeAllowedEmail(id) {
+  return remove("allowed_emails", `id=eq.${id}`);
+}
+
 // ─── SETTINGS ───
 export async function loadSettings() {
   const rows = await get("spin_settings", "limit=50");
