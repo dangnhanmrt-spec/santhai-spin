@@ -1031,9 +1031,10 @@ function AdminPage({ onBack }) {
   }, []);
 
   const doLogin = () => {
+    try { localStorage.setItem("st_goto_admin","1"); } catch(e){}
     supabaseClient.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin + "/#admin" },
+      options: { redirectTo: window.location.origin },
     });
   };
 
@@ -1651,12 +1652,25 @@ function genTestVoucherXLS(prizes) {
 
 /* ─── APP ROOT ─── */
 export default function App() {
-  const [admin, setAdmin] = useState(() => typeof window !== "undefined" && window.location.hash.includes("admin"));
+  const [admin, setAdmin] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const h = window.location.hash;
+    // OAuth redirect trả về #access_token=... → check localStorage xem có đang login admin không
+    if (h.includes("access_token")) {
+      try { if (localStorage.getItem("st_goto_admin")) return true; } catch(e){}
+    }
+    return h.includes("admin");
+  });
   useEffect(() => {
     const onHash = () => setAdmin(window.location.hash.includes("admin"));
     window.addEventListener("hashchange", onHash);
+    // Nếu đang ở admin sau OAuth → set hash sạch
+    if (admin && window.location.hash.includes("access_token")) {
+      try { localStorage.removeItem("st_goto_admin"); } catch(e){}
+      window.history.replaceState(null, "", window.location.pathname + "#admin");
+    }
     return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+  }, [admin]);
   if (admin) return <AdminPage onBack={() => { window.location.hash = ""; setAdmin(false); }}/>;
   return <CustomerPage onAdmin={() => { window.location.hash = "#admin"; setAdmin(true); }}/>;
 }
