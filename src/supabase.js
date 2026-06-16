@@ -185,9 +185,15 @@ export async function loadStores() {
 }
 
 // ─── ADMIN ───
-export async function loadSpins(date) {
+export async function loadSpins(date, filters = {}) {
   const { start, end } = dayRange(date);
-  return get("spin_records", `order=spun_at.desc&limit=500&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}`);
+  let params = `order=spun_at.desc&limit=2000&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}`;
+  if (filters.phone) params += `&phone=eq.${filters.phone.replace(/\D/g, "")}`;
+  if (filters.bill) params += `&bill_code=ilike.*${encodeURIComponent(filters.bill.toUpperCase())}*`;
+  if (filters.store) params += `&store_id=eq.${encodeURIComponent(filters.store)}`;
+  if (filters.valid === "yes") params += `&is_valid=eq.true`;
+  if (filters.valid === "no") params += `&is_valid=eq.false`;
+  return get("spin_records", params);
 }
 
 export async function loadSpecialWinners() {
