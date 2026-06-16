@@ -7,6 +7,7 @@ import {
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
   loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
   loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
+  checkSpinRateLimit, deleteSpin,
 } from "./supabase.js";
 
 /* ─── CONSTANTS ─── */
@@ -576,9 +577,11 @@ function CustomerPage({ onAdmin }) {
     seg_text_color:"#FFFFFF", seg_stroke_color:"#1b459c", seg_stroke_width:"2",
     seg_badge_show:"true", seg_badge_color:"", seg_badge_opacity:"100",
     hl_color:"#FFFFFF", hl_opacity:"45", hl_border_color:"#FFD700", hl_border_width:"2",
-    wheel_seg_radius:"93"
-  });
-  const [bill,       setBill]       = useState("");
+    wheel_seg_radius:"93",
+    rate_warn_threshold:"5", rate_block_threshold:"10",
+    rate_warn_message:"⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.",
+    rate_block_message:"⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."
+  });  const [bill,       setBill]       = useState("");
   const [phone,      setPhone]      = useState(()=>{ try{return localStorage.getItem("st_phone")||""}catch{return""} });
   const [billQueue,  setBillQueue]  = useState([]);
   const [err,        setErr]        = useState("");
@@ -611,6 +614,12 @@ function CustomerPage({ onAdmin }) {
     if(billQueue.some(q=>q.billCode===b)) return setErr("Mã bill này đã thêm vào rồi.");
     setLoading(true); setErr("");
     try{ localStorage.setItem("st_phone",p); }catch{}
+    // Rate limit: custom thresholds from settings
+    const warnAt = parseInt(settings.rate_warn_threshold) || 5;
+    const blockAt = parseInt(settings.rate_block_threshold) || 10;
+    const todaySpins = await checkSpinRateLimit(p);
+    if (todaySpins >= blockAt) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày."); }
+    if (todaySpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
     const res=await doSpin(b,p,store.id||null,store.name||null);
     setLoading(false);
@@ -1139,7 +1148,9 @@ function AdminPage({ onBack }) {
     seg_text_color:"#FFFFFF",seg_stroke_color:"#1b459c",seg_stroke_width:"2",
     seg_badge_show:"true",seg_badge_color:"",seg_badge_opacity:"100",
     hl_color:"#FFFFFF",hl_opacity:"45",hl_border_color:"#FFD700",hl_border_width:"2",
-    wheel_seg_radius:"93"
+    wheel_seg_radius:"93",
+    rate_warn_threshold:"5", rate_block_threshold:"10",
+    rate_warn_message:"", rate_block_message:""
   });
   const [settingsSaved, setSettingsSaved] = useState("");
   const [editingPrize, setEditingPrize] = useState(null);
@@ -1494,6 +1505,32 @@ function AdminPage({ onBack }) {
                 Hiển thị danh sách phần thưởng (ở trang khách)
               </label>
             </div>
+
+            {/* ── CHỐNG SPAM & CẢNH BÁO ── */}
+            <h3 style={{fontSize:16,fontWeight:900,margin:"28px 0 8px",borderTop:"2px solid #e5e7eb",paddingTop:20}}>🚨 Chống spam & Cảnh báo</h3>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:14}}>
+              <div style={{flex:"1 1 45%"}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Ngưỡng cảnh báo (lượt/ngày)</label>
+                <input type="number" min="1" max="50" value={adminSettings.rate_warn_threshold||"5"} onChange={e=>setAdminSettings(p=>({...p,rate_warn_threshold:e.target.value}))} style={{...inp,width:"100%"}}/>
+                <div style={{fontSize:11,color:"#9ca3af"}}>Đạt mốc này → hiện cảnh báo vàng cho khách</div>
+              </div>
+              <div style={{flex:"1 1 45%"}}>
+                <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Ngưỡng chặn (lượt/ngày)</label>
+                <input type="number" min="1" max="50" value={adminSettings.rate_block_threshold||"10"} onChange={e=>setAdminSettings(p=>({...p,rate_block_threshold:e.target.value}))} style={{...inp,width:"100%"}}/>
+                <div style={{fontSize:11,color:"#9ca3af"}}>Đạt mốc này → chặn cứng, không cho quay</div>
+              </div>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Nội dung cảnh báo (hiển thị cho khách ở mốc cảnh báo)</label>
+              <input type="text" value={adminSettings.rate_warn_message||""} onChange={e=>setAdminSettings(p=>({...p,rate_warn_message:e.target.value}))}
+                placeholder="⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ." style={{...inp,width:"100%"}}/>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Nội dung chặn (hiển thị cho khách ở mốc chặn)</label>
+              <input type="text" value={adminSettings.rate_block_message||""} onChange={e=>setAdminSettings(p=>({...p,rate_block_message:e.target.value}))}
+                placeholder="⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày." style={{...inp,width:"100%"}}/>
+            </div>
+
             <button onClick={async()=>{
               setSettingsSaved("⏳ Đang lưu…");
               const results=await Promise.all(Object.entries(adminSettings).map(([k,v])=>saveSetting(k,v)));
@@ -1598,21 +1635,29 @@ function AdminPage({ onBack }) {
             <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{background:"#f9fafb"}}>
-                  {["Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Trạng thái","Thời gian"].map(h=><th key={h} style={th}>{h}</th>)}
+                  {["Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Trạng thái","Thời gian",""].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {spins.length===0 ? <tr><td colSpan={7} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
-                  : spins.map(s=>(
-                    <tr key={s.id} style={{background:s.is_valid?"#fff":"#fef2f2"}}>
-                      <td style={{...td,fontFamily:"monospace",fontWeight:700}}>{s.bill_code}</td>
+                  {spins.length===0 ? <tr><td colSpan={8} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
+                  : spins.map(s=>{
+                    // Detect sequential bill pattern
+                    const billMatch = s.bill_code?.match(/^([A-Z.]+?)(\d{3,})$/);
+                    const isSeq = billMatch && spins.some(o => o.id!==s.id && o.phone===s.phone && o.bill_code?.startsWith(billMatch[1]) && Math.abs(parseInt(o.bill_code.replace(billMatch[1],"")) - parseInt(billMatch[2]))===1);
+                    return (
+                    <tr key={s.id} style={{background:isSeq?"#fef9f0":s.is_valid?"#fff":"#fef2f2"}}>
+                      <td style={{...td,fontFamily:"monospace",fontWeight:700}}>
+                        {s.bill_code}
+                        {isSeq&&<span style={{marginLeft:4,fontSize:10,color:"#e99849",fontWeight:800}} title="Bill có số liên tiếp — nghi ngờ gian lận">⚠️</span>}
+                      </td>
                       <td style={td}>{s.phone}</td>
                       <td style={{...td,fontSize:12,color:"#6b7280"}}>{s.store_name||s.store_id||"—"}</td>
                       <td style={{...td,fontWeight:700}}>{s.prize_name}</td>
                       <td style={{...td,fontFamily:"monospace",fontWeight:700,color:"#e99849",background:s.voucher_code&&s.voucher_code!=="PENDING"?"#fef9f0":"transparent"}}>{s.voucher_code||"—"}</td>
                       <td style={td}><span style={{borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700,background:s.is_valid?"#f0fdf4":"#fef2f2",color:s.is_valid?"#065f46":"#dc2626"}}>{s.is_valid?"✅ Hợp lệ":"❌ Không HLệ"}</span></td>
                       <td style={{...td,fontSize:12,color:"#9ca3af"}}>{timeAgo(s.spun_at)}</td>
-                    </tr>
-                  ))}
+                      <td style={td}><button onClick={async()=>{if(!confirm(`Xóa spin này? Bill "${s.bill_code}" sẽ được giải phóng để nhập lại.`))return;await deleteSpin(s.id);loadAll();}} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:11}} title="Xóa spin — giải phóng bill code">🗑</button></td>
+                    </tr>);
+                  })}
                 </tbody>
               </table>
             </div>
