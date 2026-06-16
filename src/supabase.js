@@ -262,6 +262,15 @@ export async function checkSpinRateLimit(phone) {
   return rows.length;
 }
 
+// ─── LOOKUP (tra cứu voucher theo SĐT) ───
+export async function lookupSpinsByPhone(phone) {
+  const clean = phone.replace(/\D/g, "");
+  if (!clean || clean.length < 9) return [];
+  return get("spin_records",
+    `phone=eq.${clean}&order=spun_at.desc&limit=50&select=id,bill_code,prize_name,prize_type,voucher_code,spun_at,store_name,is_valid`
+  );
+}
+
 // ─── DELETE SPIN (giải phóng bill code) ───
 export async function deleteSpin(id) {
   return remove("spin_records", `id=eq.${id}`);
