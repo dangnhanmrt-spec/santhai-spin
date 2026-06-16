@@ -476,7 +476,7 @@ function Confetti() {
 }
 
 /* ─── RESULT MODAL ─── */
-function ResultModal({ result, phone, onClose, closeLabel }) {
+function ResultModal({ result, phone, onClose, closeLabel, settings }) {
   if (!result) return null;
   const big   = result.prize_type==="special";
   const viral = result.prize_type==="viral";
@@ -486,6 +486,7 @@ function ResultModal({ result, phone, onClose, closeLabel }) {
   const mm=String(expiry.getMonth()+1).padStart(2,"0");
   const yy=String(expiry.getFullYear()).slice(2);
   const hsd = `${dd}/${mm}/${yy}`;
+  const s = settings || {};
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -497,22 +498,18 @@ function ResultModal({ result, phone, onClose, closeLabel }) {
         </div>
         {viral ? (
           <>
-            <div style={{fontSize:22,fontWeight:900,color:"#ef4444",marginBottom:6}}>Ôi không!</div>
-            <div style={{fontSize:22,fontWeight:900,color:"#1c1917",marginBottom:12}}>Mất Lượt 😅</div>
-            <div style={{background:"#fef2f2",borderRadius:12,padding:"12px 16px",fontSize:14,color:"#dc2626",marginBottom:14,lineHeight:1.7}}>
-              Chưa trúng lần này, nhưng bạn vẫn được<br/>
-              <strong>1 topping miễn phí</strong> hôm nay!<br/>
-              <span style={{fontSize:12}}>Đưa màn hình này cho nhân viên nhé 😊</span>
+            <div style={{fontSize:22,fontWeight:900,color:"#ef4444",marginBottom:6}}>{s.viral_title||"Ôi không!"}</div>
+            <div style={{fontSize:22,fontWeight:900,color:"#1c1917",marginBottom:12}}>{s.viral_subtitle||"Mất Lượt 😅"}</div>
+            <div style={{background:"#fef2f2",borderRadius:12,padding:"12px 16px",fontSize:14,color:"#dc2626",marginBottom:14,lineHeight:1.7,whiteSpace:"pre-line"}}>
+              {s.viral_message||"Chưa trúng lần này, nhưng bạn vẫn được\n1 topping miễn phí hôm nay!\nĐưa màn hình này cho nhân viên nhé 😊"}
             </div>
           </>
         ) : big ? (
           <>
-            <div style={{fontSize:14,fontWeight:700,color:"#92400e",letterSpacing:1,marginBottom:4}}>🎉 CHÚC MỪNG!</div>
+            <div style={{fontSize:14,fontWeight:700,color:"#92400e",letterSpacing:1,marginBottom:4}}>{s.special_title||"🎉 CHÚC MỪNG!"}</div>
             <div style={{fontSize:24,fontWeight:900,color:"#e99849",marginBottom:16}}>{result.prize_name}</div>
-            <div style={{background:"#FFF8EE",border:"2px dashed #e99849",borderRadius:12,padding:"14px 16px",lineHeight:1.7,fontSize:14,color:"#92400e"}}>
-              Nhân viên SanThai sẽ liên hệ qua<br/>
-              <strong style={{fontSize:18,color:"#d4822a"}}>{phone}</strong><br/>
-              <span style={{fontSize:12,color:"#a16207"}}>trong vòng 24 giờ để trao giải ✨</span>
+            <div style={{background:"#FFF8EE",border:"2px dashed #e99849",borderRadius:12,padding:"14px 16px",lineHeight:1.7,fontSize:14,color:"#92400e",whiteSpace:"pre-line"}}>
+              {(s.special_message||"Nhân viên SanThai sẽ liên hệ qua SĐT\ntrong vòng 24 giờ để trao giải ✨").replace("{phone}",phone)}
             </div>
           </>
         ) : (
@@ -528,7 +525,7 @@ function ResultModal({ result, phone, onClose, closeLabel }) {
                 <div style={{background:"#f0fdf4",border:"2px solid #10b981",borderRadius:12,padding:"13px 16px",fontSize:14,color:"#065f46",lineHeight:1.8,textAlign:"left"}}>
                   🧋 Mã voucher của bạn là <strong style={{color:"#d4822a",fontFamily:"monospace"}}>"{code}"</strong>.<br/>
                   HSD là <strong>{hsd}</strong> <span style={{fontSize:12,color:"#6b7280"}}>(30 ngày từ ngày up lên)</span>.<br/>
-                  <span style={{fontSize:13,color:"#047857"}}>Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸</span>
+                  <span style={{fontSize:13,color:"#047857"}}>{s.normal_voucher_note||"Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸"}</span>
                 </div>
               </>
             ) : code==="PENDING" ? (
@@ -537,8 +534,8 @@ function ResultModal({ result, phone, onClose, closeLabel }) {
                 Vui lòng đưa màn hình này cho nhân viên<br/>để nhận <strong>{result.prize_name}</strong> miễn phí!
               </div>
             ) : (
-              <div style={{background:"#f0fdf4",border:"2px solid #10b981",borderRadius:12,padding:14,fontSize:14,color:"#065f46",lineHeight:1.6}}>
-                🧋 Đưa màn hình này cho nhân viên<br/>để nhận <strong>{result.prize_name}</strong> miễn phí!
+              <div style={{background:"#f0fdf4",border:"2px solid #10b981",borderRadius:12,padding:14,fontSize:14,color:"#065f46",lineHeight:1.6,whiteSpace:"pre-line"}}>
+                🧋 {s.normal_no_voucher_note||"Đưa màn hình này cho nhân viên để nhận thưởng miễn phí!"}
               </div>
             )}
           </>
@@ -580,7 +577,12 @@ function CustomerPage({ onAdmin }) {
     wheel_seg_radius:"93",
     rate_warn_threshold:"5", rate_block_threshold:"10",
     rate_warn_message:"⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.",
-    rate_block_message:"⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."
+    rate_block_message:"⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai.",
+    viral_title:"Ôi không!", viral_subtitle:"Mất Lượt 😅",
+    viral_message:"Chưa trúng lần này, nhưng bạn vẫn được\n1 topping miễn phí hôm nay!\nĐưa màn hình này cho nhân viên nhé 😊",
+    special_title:"🎉 CHÚC MỪNG!", special_message:"Nhân viên SanThai sẽ liên hệ qua SĐT\ntrong vòng 24 giờ để trao giải ✨",
+    normal_voucher_note:"Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸",
+    normal_no_voucher_note:"Đưa màn hình này cho nhân viên để nhận thưởng miễn phí!"
   });  const [bill,       setBill]       = useState("");
   const [phone,      setPhone]      = useState(()=>{ try{return localStorage.getItem("st_phone")||""}catch{return""} });
   const [billQueue,  setBillQueue]  = useState([]);
@@ -808,7 +810,7 @@ function CustomerPage({ onAdmin }) {
         </div>
       </div>
 
-      {curResult&&<ResultModal result={curResult} phone={phone} onClose={handleNextSpin}
+      {curResult&&<ResultModal result={curResult} phone={phone} onClose={handleNextSpin} settings={settings}
         closeLabel={spinIdx<billQueue.length-1?`Quay lượt ${spinIdx+2} →`:"Xong 🎉"}/>}
     </div>
   );
@@ -1154,7 +1156,10 @@ function AdminPage({ onBack }) {
     hl_color:"#FFFFFF",hl_opacity:"45",hl_border_color:"#FFD700",hl_border_width:"2",
     wheel_seg_radius:"93",
     rate_warn_threshold:"5", rate_block_threshold:"10",
-    rate_warn_message:"", rate_block_message:""
+    rate_warn_message:"", rate_block_message:"",
+    viral_title:"", viral_subtitle:"", viral_message:"",
+    special_title:"", special_message:"",
+    normal_voucher_note:"", normal_no_voucher_note:""
   });
   const [settingsSaved, setSettingsSaved] = useState("");
   const [editingPrize, setEditingPrize] = useState(null);
@@ -1549,6 +1554,49 @@ function AdminPage({ onBack }) {
               <label style={{fontSize:12,fontWeight:700,color:"#374151",display:"block",marginBottom:4}}>Nội dung chặn (hiển thị cho khách ở mốc chặn)</label>
               <input type="text" value={adminSettings.rate_block_message||""} onChange={e=>setAdminSettings(p=>({...p,rate_block_message:e.target.value}))}
                 placeholder="⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày." style={{...inp,width:"100%"}}/>
+            </div>
+
+            {/* ── TÙY CHỈNH THÔNG BÁO KẾT QUẢ ── */}
+            <h3 style={{fontSize:16,fontWeight:900,margin:"28px 0 8px",borderTop:"2px solid #e5e7eb",paddingTop:20}}>🎁 Thông báo kết quả (popup sau khi quay)</h3>
+
+            <div style={{background:"#f3f4f6",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #e5e7eb"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:10,color:"#64748b"}}>❌ Giải Viral (Mất Lượt)</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:8}}>
+                <div style={{flex:"1 1 45%"}}>
+                  <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Tiêu đề</label>
+                  <input type="text" value={adminSettings.viral_title||""} onChange={e=>setAdminSettings(p=>({...p,viral_title:e.target.value}))} placeholder="Ôi không!" style={{...inp,width:"100%"}}/>
+                </div>
+                <div style={{flex:"1 1 45%"}}>
+                  <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Phụ đề</label>
+                  <input type="text" value={adminSettings.viral_subtitle||""} onChange={e=>setAdminSettings(p=>({...p,viral_subtitle:e.target.value}))} placeholder="Mất Lượt 😅" style={{...inp,width:"100%"}}/>
+                </div>
+              </div>
+              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Nội dung (xuống dòng = Enter)</label>
+              <textarea value={adminSettings.viral_message||""} onChange={e=>setAdminSettings(p=>({...p,viral_message:e.target.value}))} rows={3}
+                placeholder={"Chưa trúng lần này, nhưng bạn vẫn được\n1 topping miễn phí hôm nay!\nĐưa màn hình này cho nhân viên nhé 😊"} style={{...inp,width:"100%",resize:"vertical"}}/>
+            </div>
+
+            <div style={{background:"#fef3c7",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #fde68a"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:10,color:"#92400e"}}>🏆 Giải Special (Thẻ 15/30 ngày)</div>
+              <div style={{marginBottom:8}}>
+                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Tiêu đề</label>
+                <input type="text" value={adminSettings.special_title||""} onChange={e=>setAdminSettings(p=>({...p,special_title:e.target.value}))} placeholder="🎉 CHÚC MỪNG!" style={{...inp,width:"100%"}}/>
+              </div>
+              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Nội dung (dùng {"{phone}"} để chèn SĐT khách)</label>
+              <textarea value={adminSettings.special_message||""} onChange={e=>setAdminSettings(p=>({...p,special_message:e.target.value}))} rows={3}
+                placeholder={"Nhân viên SanThai sẽ liên hệ qua SĐT\ntrong vòng 24 giờ để trao giải ✨"} style={{...inp,width:"100%",resize:"vertical"}}/>
+            </div>
+
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,border:"1px solid #bbf7d0"}}>
+              <div style={{fontSize:13,fontWeight:800,marginBottom:10,color:"#065f46"}}>🧋 Giải Normal (Topping)</div>
+              <div style={{marginBottom:8}}>
+                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Ghi chú khi có voucher code</label>
+                <input type="text" value={adminSettings.normal_voucher_note||""} onChange={e=>setAdminSettings(p=>({...p,normal_voucher_note:e.target.value}))}
+                  placeholder="Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸" style={{...inp,width:"100%"}}/>
+              </div>
+              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>Ghi chú khi không có voucher</label>
+              <input type="text" value={adminSettings.normal_no_voucher_note||""} onChange={e=>setAdminSettings(p=>({...p,normal_no_voucher_note:e.target.value}))}
+                placeholder="Đưa màn hình này cho nhân viên để nhận thưởng miễn phí!" style={{...inp,width:"100%"}}/>
             </div>
 
             <button onClick={async()=>{
