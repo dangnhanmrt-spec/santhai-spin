@@ -245,6 +245,22 @@ export async function bulkDeleteVouchers(ids) {
   return remove("spin_vouchers", `id=in.(${ids.join(",")})`);
 }
 
+// ─── RATE LIMIT (chống spam) ───
+export async function checkSpinRateLimit(phone) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { start, end } = dayRange(today);
+  const clean = phone.replace(/\D/g, "");
+  const rows = await get("spin_records",
+    `phone=eq.${clean}&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}&select=id&limit=20`
+  );
+  return rows.length;
+}
+
+// ─── DELETE SPIN (giải phóng bill code) ───
+export async function deleteSpin(id) {
+  return remove("spin_records", `id=eq.${id}`);
+}
+
 // ─── ALLOWED EMAILS (quản lý quyền truy cập) ───
 export async function loadAllowedEmails() {
   return get("allowed_emails", "order=created_at.desc&limit=100");
