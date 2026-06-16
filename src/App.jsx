@@ -592,9 +592,6 @@ function CustomerPage({ onAdmin }) {
   const [spinning,   setSpinning]   = useState(false);
   const [curResult,  setCurResult]  = useState(null);
   const [descOpen,   setDescOpen]   = useState(false);
-  const [lookupOpen, setLookupOpen] = useState(false);
-  const [lookupData, setLookupData] = useState([]);
-  const [lookupLoading, setLookupLoading] = useState(false);
 
   const showPrizeList = settings.show_prize_list!=="false";
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
@@ -725,52 +722,10 @@ function CustomerPage({ onAdmin }) {
               ))}
             </div>
           )}
-          <div style={{fontSize:11,color:"#a8a29e",textAlign:"center"}}>Mỗi mã bill chỉ dùng được 1 lần</div>
-
-          {/* ── TRA CỨU VOUCHER ── */}
-          <div style={{borderTop:"1px solid #e8d5b7",paddingTop:12,marginTop:4}}>
-            <button onClick={async()=>{
-              if(lookupOpen){setLookupOpen(false);return;}
-              const p=phone.replace(/\D/g,"");
-              if(p.length<9){setLookupOpen(true);setLookupData([]);return;}
-              setLookupLoading(true);setLookupOpen(true);
-              const data=await lookupSpinsByPhone(p);
-              setLookupData(Array.isArray(data)?data:[]);setLookupLoading(false);
-            }} style={{width:"100%",padding:"10px",background:"rgba(27,69,156,.08)",border:"1px solid rgba(27,69,156,.2)",borderRadius:10,fontSize:13,color:"#1b459c",fontWeight:700,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span>📱 Tra cứu mã voucher đã trúng</span><span>{lookupOpen?"▲":"▼"}</span>
-            </button>
-            {lookupOpen&&(
-              <div style={{background:"#fff",borderRadius:"0 0 12px 12px",border:"1px solid #e5e7eb",borderTop:"none",padding:"12px 14px",maxHeight:320,overflowY:"auto"}}>
-                {!phone.replace(/\D/g,"")||phone.replace(/\D/g,"").length<9 ? (
-                  <div style={{textAlign:"center",color:"#9ca3af",fontSize:13,padding:12}}>Nhập SĐT ở trên trước rồi bấm tra cứu</div>
-                ) : lookupLoading ? (
-                  <div style={{textAlign:"center",color:"#9ca3af",fontSize:13,padding:12}}>⏳ Đang tìm…</div>
-                ) : lookupData.length===0 ? (
-                  <div style={{textAlign:"center",color:"#9ca3af",fontSize:13,padding:12}}>Chưa có lượt quay nào cho SĐT này</div>
-                ) : (
-                  <>
-                    <div style={{fontSize:12,fontWeight:700,color:"#065f46",marginBottom:8}}>🎁 {lookupData.filter(d=>d.voucher_code&&d.voucher_code!=="PENDING"&&d.prize_type==="normal"&&d.is_valid).length} mã voucher</div>
-                    {lookupData.filter(d=>d.is_valid).map(d=>(
-                      <div key={d.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6",fontSize:13}}>
-                        <div>
-                          <div style={{fontWeight:700,color:d.prize_type==="viral"?"#ef4444":d.prize_type==="special"?"#e99849":"#1c1917"}}>{d.prize_name}</div>
-                          <div style={{fontSize:11,color:"#9ca3af"}}>{d.store_name||""} · {d.spun_at?new Date(d.spun_at).toLocaleDateString("vi-VN"):""}</div>
-                        </div>
-                        {d.voucher_code&&d.voucher_code!=="PENDING"&&d.prize_type==="normal" ? (
-                          <div style={{background:"linear-gradient(135deg,#FFF8EE,#fef3c7)",border:"2px solid #e99849",borderRadius:8,padding:"4px 10px",fontFamily:"monospace",fontWeight:900,fontSize:14,color:"#d4822a",letterSpacing:2}}>{d.voucher_code}</div>
-                        ) : d.voucher_code==="PENDING" ? (
-                          <span style={{fontSize:11,color:"#e99849",fontWeight:700}}>⏳ Đang xử lý</span>
-                        ) : d.prize_type==="special" ? (
-                          <span style={{fontSize:11,color:"#e99849",fontWeight:700}}>🏆 Liên hệ SĐT</span>
-                        ) : (
-                          <span style={{fontSize:11,color:"#9ca3af"}}>—</span>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
+          <div style={{fontSize:12,color:"#78716c",textAlign:"center",lineHeight:1.6}}>
+            Mỗi mã bill chỉ dùng được 1 lần.<br/>
+            <span style={{color:"#e99849",fontWeight:600}}>Khi đã nhập bill, cần quay ngay.</span><br/>
+            <span style={{fontSize:11}}>Nếu chưa quay mà thoát game, liên hệ admin để xem lịch sử voucher.</span>
           </div>
         </div>
 
