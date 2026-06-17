@@ -596,8 +596,8 @@ function CustomerPage({ onAdmin }) {
   const showPrizeList = settings.show_prize_list!=="false";
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
   const useImageWheel = settings.wheel_image_url&&settings.wheel_image_url.startsWith("http");
-  const wheelSize = typeof window!=="undefined" ? Math.min(showPrizeList?300:420,window.innerWidth-48) : 340;
-  const bgStyle = hasBg ? {backgroundImage:`url(${settings.bg_image_url})`,backgroundSize:"cover",backgroundPosition:"center"} : {background:settings.bg_color||"#F5F0E8"};
+  const wheelSize = typeof window!=="undefined" ? Math.min(showPrizeList?340:520,window.innerWidth-40) : 380;
+  const bgColor = settings.bg_color||"#F5F0E8";
 
   useEffect(() => {
     loadActivePrizes().then(setPrizes);
@@ -652,7 +652,7 @@ function CustomerPage({ onAdmin }) {
   const tooManySpins = billQueue.length>=5;
 
   return (
-    <div style={{minHeight:"100vh",...bgStyle}}>
+    <div style={{minHeight:"100vh",background:bgColor}}>
       <style>{G}</style>
       <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
@@ -667,7 +667,7 @@ function CustomerPage({ onAdmin }) {
       </div>
 
       <div style={{display:"flex",flexWrap:"wrap",minHeight:"calc(100vh - 80px - 60px)"}}>
-        <div style={{flex:"1 1 320px",padding:"28px 24px",background:"rgba(255,255,255,.92)",borderRight:"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{flex:"1 1 50%",padding:"28px 24px",background:"rgba(255,255,255,.95)",borderRight:"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,maxWidth:600}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
             ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
@@ -729,7 +729,10 @@ function CustomerPage({ onAdmin }) {
           </div>
         </div>
 
-        <div style={{flex:"1 1 320px",padding:"28px 20px",background:"rgba(255,247,237,.7)",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+        <div style={{flex:"1 1 50%",padding:"20px",
+          background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
+          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,
+          aspectRatio:"1",minHeight:400,position:"relative"}}>
           <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"#F0F0F0",borderRadius:50,padding:"8px 22px",fontSize:16,fontWeight:800,
             color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
             boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"none",
