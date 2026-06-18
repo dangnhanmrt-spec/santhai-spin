@@ -598,7 +598,8 @@ function CustomerPage({ onAdmin }) {
   const showPrizeList = settings.show_prize_list!=="false";
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
   const useImageWheel = settings.wheel_image_url&&settings.wheel_image_url.startsWith("http");
-  const wheelSize = typeof window!=="undefined" ? Math.min(showPrizeList?340:520,window.innerWidth-40) : 380;
+  const isMobile = typeof window!=="undefined" && window.innerWidth < 768;
+  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(window.innerWidth-32, 400) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
   const bgColor = settings.bg_color||"#F5F0E8";
 
   useEffect(() => {
@@ -668,8 +669,41 @@ function CustomerPage({ onAdmin }) {
         <div onClick={onAdmin} style={{fontSize:11,color:"rgba(255,255,255,.3)",cursor:"default",userSelect:"none"}}>v3</div>
       </div>
 
-      <div style={{display:"flex",flexWrap:"wrap",minHeight:"calc(100vh - 80px - 60px)"}}>
-        <div style={{flex:"1 1 50%",padding:"28px 24px",background:"rgba(255,255,255,.95)",borderRight:"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,overflow:"auto"}}>
+      <div style={{display:"flex",flexDirection:isMobile?"column":"row",minHeight:isMobile?"auto":"calc(100vh - 80px - 60px)"}}>
+        {/* Mobile: wheel first, desktop: form first */}
+        {isMobile&&(
+          <div style={{padding:"16px",
+            background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,
+            position:"relative",minHeight:Math.min(window.innerWidth,420)}}>
+            <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"rgba(255,255,255,.85)",borderRadius:50,padding:"6px 18px",fontSize:14,fontWeight:800,
+              color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
+              boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"none",
+              animation:billQueue.length>0&&spinIdx<0?"pulse-ring 1.5s infinite":"none"}}>
+              🎯 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
+              {spinIdx>=0&&spinning&&` — Lượt ${spinIdx+1}/${billQueue.length}`}
+            </div>
+            <div style={{position:"relative",display:"inline-block"}}>
+              {useImageWheel ? (
+                <WheelImageSpinner prizes={prizes} winnerId={currentPrize?.prize_id}
+                  spinning={spinning} onDone={handleSpinDone} size={wheelSize} settings={settings}/>
+              ) : (
+                <WheelCanvas prizes={prizes} winnerId={currentPrize?.prize_id}
+                  spinning={spinning} onDone={handleSpinDone} size={wheelSize}/>
+              )}
+            </div>
+            <button onClick={handleStartSpin} disabled={billQueue.length===0||spinning||spinIdx>=0}
+              style={{padding:"12px 24px",fontSize:15,fontWeight:900,border:"none",borderRadius:50,
+                cursor:billQueue.length>0&&!spinning&&spinIdx<0?"pointer":"not-allowed",
+                background:billQueue.length>0&&!spinning&&spinIdx<0?"linear-gradient(135deg,#7c3aed,#6d28d9)":"rgba(255,255,255,.6)",
+                color:billQueue.length>0&&!spinning&&spinIdx<0?"#fff":"#9ca3af",
+                boxShadow:billQueue.length>0&&!spinning&&spinIdx<0?"0 6px 24px rgba(124,58,237,.5)":"none"}}>
+              {spinning?"🌀 Đang quay…":billQueue.length>0&&spinIdx<0?"🎰 QUAY NGAY!":"Nhập bill trước"}
+            </button>
+          </div>
+        )}
+        {/* LEFT: Form */}
+        <div style={{flex:isMobile?"none":"1 1 50%",padding:isMobile?"20px 16px":"28px 24px",background:"rgba(255,255,255,.95)",borderRight:isMobile?"none":"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,overflow:"auto"}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
             ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
@@ -731,6 +765,8 @@ function CustomerPage({ onAdmin }) {
           </div>
         </div>
 
+        {/* RIGHT: Wheel (desktop only — mobile is rendered above) */}
+        {!isMobile&&(
         <div style={{flex:"1 1 50%",padding:"20px",
           background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
           display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,
@@ -783,6 +819,7 @@ function CustomerPage({ onAdmin }) {
             </div>
           )}
         </div>
+        )}
       </div>
 
       <div style={{background:"rgba(255,255,255,.95)",borderTop:"2px solid #e99849",padding:"28px 24px"}}>
