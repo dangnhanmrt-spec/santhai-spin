@@ -135,7 +135,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const dpr    = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
   const cx     = size/2, cy = size/2;
   const outerR = size * (radiusPct/200);
-  const hubR   = size * 0.0875; /* 30% nhỏ hơn mặc định (0.125) */
+  const hubR   = size * 0.1; /* 20% nhỏ hơn mặc định (0.125) */
 
   useEffect(() => {
     if (!fontName) { setFontOk(true); return; }
@@ -282,23 +282,23 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     <div style={{ position:"relative", width:size, height:size }}>
       {/* Pointer ẩn khi custom wheel */}
       {hasBg && !loaded && (
-        <div style={{ position:"absolute", top:"2.5%", left:"2.5%", width:"95%", height:"95%", borderRadius:"50%",
+        <div style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", borderRadius:"50%",
           background:"#f3f4f6", display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:14, color:"#9ca3af", zIndex:1 }}>Đang tải...</div>
       )}
       {/* L1: Ảnh nền — 95% size, centered (nhỏ hơn frame 5%) */}
       {hasBg && <img src={bgUrl} alt="" onLoad={()=>setLoaded(true)} draggable={false}
-        style={{ position:"absolute", top:"2.5%", left:"2.5%", width:"95%", height:"95%",
+        style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%",
           borderRadius:"50%", objectFit:"contain", zIndex:2,
           display:loaded?"block":"none", userSelect:"none" }}/>}
       {/* L2: Segments canvas — 95% size */}
-      <canvas ref={segRef} style={{ position:"absolute", top:"2.5%", left:"2.5%", width:"95%", height:"95%", pointerEvents:"none", zIndex:5 }}/>
+      <canvas ref={segRef} style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", pointerEvents:"none", zIndex:5 }}/>
       {/* L3: Frame — 100% size (đè lên viền L1+L2) */}
       {hasFrame && <img src={frameUrl} alt="" draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
       {/* L4: Highlight — 95% size (khớp với L2) */}
-      <canvas ref={hlRef} style={{ position:"absolute", top:"2.5%", left:"2.5%", width:"95%", height:"95%", pointerEvents:"none", zIndex:15 }}/>
+      <canvas ref={hlRef} style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", pointerEvents:"none", zIndex:15 }}/>
       {hasCenter ? (
         <img src={centerUrl} alt="" draggable={false}
           onLoad={()=>setCenterOk(true)}
