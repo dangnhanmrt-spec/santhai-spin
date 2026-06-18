@@ -158,7 +158,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
     const list = prizesRef.current;
     const n = list.length; if (!n) return;
     const sweep = (2*Math.PI)/n;
-    const FILLS = ["rgba(255,220,80,0.35)","rgba(255,200,50,0.12)"];
+    const FILLS = ["transparent","transparent"];
     const SP = { special_30:"#CC2136", special_15:"#1b459c", viral:"#64748b" };
     list.forEach((p,i) => {
       const start = -Math.PI/2 + i*sweep, end = start+sweep;
@@ -169,7 +169,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       ctx.fillStyle = SP[st]||FILLS[i%2]; ctx.fill();
       ctx.beginPath(); ctx.moveTo(cx,cy);
       ctx.lineTo(cx+outerR*Math.cos(start),cy+outerR*Math.sin(start));
-      ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=1; ctx.stroke();
     });
     const ff = fontOk && fontName ? `"${fontName}",` : "";
     list.forEach((p,i) => {
@@ -177,7 +177,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       const label = (p.short_name||p.name||"").toUpperCase();
       if (!label) return;
       const segW = 2*outerR*0.6*Math.sin(sweep/2);
-      const fs   = Math.max(7,Math.min(12,segW*0.36-label.length*0.08));
+      const fs   = Math.max(8,Math.min(13,segW*0.36-label.length*0.08));
       ctx.font   = `800 ${fs}px ${ff}Arial,sans-serif`;
       const tw   = ctx.measureText(label).width;
       const padX=5,padY=3,bW=tw+padX*2,bH=fs+padY*2,bDist=outerR*0.6;
@@ -297,8 +297,8 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       {hasFrame && <img src={frameUrl} alt="" draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
-      {/* L4: Highlight — 95% size (khớp với L2) */}
-      <canvas ref={hlRef} style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", pointerEvents:"none", zIndex:15 }}/>
+      {/* L4: Highlight — 100% size (khớp với L3) */}
+      <canvas ref={hlRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:15 }}/>
       {hasCenter ? (
         <img src={centerUrl} alt="" draggable={false}
           onLoad={()=>setCenterOk(true)}
@@ -376,7 +376,7 @@ function WheelCanvas({ prizes, winnerId, spinning, onDone, size }) {
     segs.forEach(({ start }) => {
       ctx.beginPath(); ctx.moveTo(cx,cy);
       ctx.lineTo(cx+R*Math.cos(start+rot), cy+R*Math.sin(start+rot));
-      ctx.strokeStyle="rgba(255,255,255,.7)"; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.strokeStyle="rgba(255,255,255,.5)"; ctx.lineWidth=1; ctx.stroke();
     });
     segs.forEach(({ start, sweep, prize_type, name, short_name }) => {
       if (sweep<0.05) return;
@@ -675,10 +675,10 @@ function CustomerPage({ onAdmin }) {
           <div style={{padding:"16px",
             background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
             display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,
-            position:"relative",minHeight:Math.min(window.innerWidth,420)}}>
-            <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"rgba(255,255,255,.85)",borderRadius:50,padding:"6px 18px",fontSize:14,fontWeight:800,
+            position:"relative",aspectRatio:"1",width:"100%"}}>
+            <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"rgba(255,255,255,.9)",borderRadius:50,padding:"6px 18px",fontSize:14,fontWeight:800,
               color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
-              boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"none",
+              boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"0 2px 8px rgba(0,0,0,.1)",
               animation:billQueue.length>0&&spinIdx<0?"pulse-ring 1.5s infinite":"none"}}>
               🎯 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
               {spinIdx>=0&&spinning&&` — Lượt ${spinIdx+1}/${billQueue.length}`}
@@ -693,11 +693,11 @@ function CustomerPage({ onAdmin }) {
               )}
             </div>
             <button onClick={handleStartSpin} disabled={billQueue.length===0||spinning||spinIdx>=0}
-              style={{padding:"12px 24px",fontSize:15,fontWeight:900,border:"none",borderRadius:50,
+              style={{padding:"14px 32px",fontSize:16,fontWeight:900,border:"none",borderRadius:50,
                 cursor:billQueue.length>0&&!spinning&&spinIdx<0?"pointer":"not-allowed",
-                background:billQueue.length>0&&!spinning&&spinIdx<0?"linear-gradient(135deg,#7c3aed,#6d28d9)":"rgba(255,255,255,.6)",
+                background:billQueue.length>0&&!spinning&&spinIdx<0?"linear-gradient(135deg,#7c3aed,#6d28d9)":"rgba(255,255,255,.85)",
                 color:billQueue.length>0&&!spinning&&spinIdx<0?"#fff":"#9ca3af",
-                boxShadow:billQueue.length>0&&!spinning&&spinIdx<0?"0 6px 24px rgba(124,58,237,.5)":"none"}}>
+                boxShadow:billQueue.length>0&&!spinning&&spinIdx<0?"0 6px 24px rgba(124,58,237,.5)":"0 2px 8px rgba(0,0,0,.1)"}}>
               {spinning?"🌀 Đang quay…":billQueue.length>0&&spinIdx<0?"🎰 QUAY NGAY!":"Nhập bill trước"}
             </button>
           </div>
