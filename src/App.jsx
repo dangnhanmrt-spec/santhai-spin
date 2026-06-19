@@ -624,8 +624,9 @@ function CustomerPage({ onAdmin }) {
     const warnAt = parseInt(settings.rate_warn_threshold) || 5;
     const blockAt = parseInt(settings.rate_block_threshold) || 10;
     const todaySpins = await checkSpinRateLimit(p);
-    if (todaySpins >= blockAt) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày."); }
-    if (todaySpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
+    const effectiveSpins = todaySpins + billQueue.length; // Cộng cả bill đang chờ quay trong session
+    if (effectiveSpins >= blockAt) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
+    if (effectiveSpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
     const res=await doSpin(b,p,store.id||null,store.name||null);
     setLoading(false);
@@ -653,7 +654,7 @@ function CustomerPage({ onAdmin }) {
   };
 
   const currentPrize = (spinning||curResult) ? billQueue[spinIdx]?.result : null;
-  const tooManySpins = billQueue.length>=5;
+  const tooManySpins = billQueue.length >= (parseInt(settings.rate_warn_threshold) || 5);
 
   return (
     <div style={{minHeight:"100vh",background:bgColor}}>
@@ -737,7 +738,7 @@ function CustomerPage({ onAdmin }) {
             ) : null}
           </div>
           {err&&<div style={{background:"#fef2f2",border:"2px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#dc2626"}}>{err}</div>}
-          {tooManySpins&&<div style={{background:"#fef2f2",border:"2px solid #ef4444",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#dc2626",lineHeight:1.6}}>⚠️ Tích lũy nhiều bill sẽ được kiểm tra kỹ trong đợt đối chiếu cuối ngày.</div>}
+          {tooManySpins&&<div style={{background:"#fef2f2",border:"2px solid #ef4444",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#dc2626",lineHeight:1.6}}>{settings.rate_warn_message||"⚠️ Tích lũy nhiều bill sẽ được kiểm tra kỹ trong đợt đối chiếu cuối ngày."}</div>}
           <button onClick={handleAddBill} disabled={loading||spinning||!bill.trim()}
             style={{padding:"14px",background:bill.trim()&&!loading&&!spinning?"#e99849":"#e5e7eb",border:"none",borderRadius:12,
               color:bill.trim()&&!loading&&!spinning?"#fff":"#9ca3af",fontSize:16,fontWeight:700,
