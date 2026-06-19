@@ -673,10 +673,10 @@ function CustomerPage({ onAdmin }) {
       <div style={{display:"flex",flexDirection:isMobile?"column":"row",minHeight:isMobile?"auto":"calc(100vh - 80px - 60px)"}}>
         {/* Mobile: wheel first, desktop: form first */}
         {isMobile&&(
-          <div style={{padding:0,
+          <div style={{padding:"20px 0",
             background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
-            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,
-            position:"relative",aspectRatio:"1",width:"100%"}}>
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,
+            position:"relative",width:"100%"}}>
             <div style={{background:billQueue.length>0&&spinIdx<0?"#e99849":"rgba(255,255,255,.9)",borderRadius:50,padding:"6px 18px",fontSize:14,fontWeight:800,
               color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
               boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"0 2px 8px rgba(0,0,0,.1)",
