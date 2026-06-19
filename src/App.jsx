@@ -135,7 +135,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const dpr    = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
   const cx     = size/2, cy = size/2;
   const outerR = size * (radiusPct/200);
-  const hubR   = size * 0.11; /* 12% nhỏ hơn mặc định (0.125) */
+  const hubR   = size * 0.121; /* ~3% nhỏ hơn mặc định (0.125) */
 
   useEffect(() => {
     if (!fontName) { setFontOk(true); return; }
@@ -600,7 +600,7 @@ function CustomerPage({ onAdmin }) {
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
   const useImageWheel = settings.wheel_image_url&&settings.wheel_image_url.startsWith("http");
   const isMobile = typeof window!=="undefined" && window.innerWidth < 768;
-  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(Math.floor(window.innerWidth*0.70), 320) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
+  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(Math.floor(window.innerWidth*0.75), 340) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
   const bgColor = settings.bg_color||"#F5F0E8";
 
   useEffect(() => {
@@ -673,7 +673,7 @@ function CustomerPage({ onAdmin }) {
       <div style={{display:"flex",flexDirection:isMobile?"column":"row",minHeight:isMobile?"auto":"calc(100vh - 80px - 60px)"}}>
         {/* Mobile: wheel first, desktop: form first */}
         {isMobile&&(
-          <div style={{padding:"16px",
+          <div style={{padding:0,
             background:hasBg?`url(${settings.bg_image_url}) center/cover no-repeat`:"rgba(255,247,237,.7)",
             display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,
             position:"relative",aspectRatio:"1",width:"100%"}}>
