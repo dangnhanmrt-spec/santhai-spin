@@ -135,7 +135,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
   const dpr    = typeof window!=="undefined" ? (window.devicePixelRatio||1) : 1;
   const cx     = size/2, cy = size/2;
   const outerR = size * (radiusPct/200);
-  const hubR   = size * 0.1; /* 20% nhỏ hơn mặc định (0.125) */
+  const hubR   = size * 0.11; /* 12% nhỏ hơn mặc định (0.125) */
 
   useEffect(() => {
     if (!fontName) { setFontOk(true); return; }
@@ -177,7 +177,8 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       const label = (p.short_name||p.name||"").toUpperCase();
       if (!label) return;
       const segW = 2*outerR*0.6*Math.sin(sweep/2);
-      const fs   = Math.max(8,Math.min(13,segW*0.36-label.length*0.08));
+      const fsMod = size < 400 ? -3 : 0;
+      const fs   = Math.max(5,Math.min(13,segW*0.36-label.length*0.08+fsMod));
       ctx.font   = `800 ${fs}px ${ff}Arial,sans-serif`;
       const tw   = ctx.measureText(label).width;
       const padX=5,padY=3,bW=tw+padX*2,bH=fs+padY*2,bDist=outerR*0.6;
@@ -298,7 +299,7 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
       {/* L4: Highlight — 90% size (khớp với L1+L2) */}
-      <canvas ref={hlRef} style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", pointerEvents:"none", zIndex:15 }}/>
+      <canvas ref={hlRef} style={{ position:"absolute", top:"3.5%", left:"3.5%", width:"93%", height:"93%", pointerEvents:"none", zIndex:15 }}/>
       {hasCenter ? (
         <img src={centerUrl} alt="" draggable={false}
           onLoad={()=>setCenterOk(true)}
@@ -599,7 +600,7 @@ function CustomerPage({ onAdmin }) {
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
   const useImageWheel = settings.wheel_image_url&&settings.wheel_image_url.startsWith("http");
   const isMobile = typeof window!=="undefined" && window.innerWidth < 768;
-  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(Math.floor(window.innerWidth*0.75), 340) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
+  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(Math.floor(window.innerWidth*0.70), 320) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
   const bgColor = settings.bg_color||"#F5F0E8";
 
   useEffect(() => {
