@@ -297,8 +297,8 @@ function WheelImageSpinner({ prizes, winnerId, spinning, onDone, size, settings 
       {hasFrame && <img src={frameUrl} alt="" draggable={false}
         style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%",
           objectFit:"contain", pointerEvents:"none", zIndex:10 }}/>}
-      {/* L4: Highlight — 100% size (khớp với L3) */}
-      <canvas ref={hlRef} style={{ position:"absolute", top:0, left:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:15 }}/>
+      {/* L4: Highlight — 90% size (khớp với L1+L2) */}
+      <canvas ref={hlRef} style={{ position:"absolute", top:"5%", left:"5%", width:"90%", height:"90%", pointerEvents:"none", zIndex:15 }}/>
       {hasCenter ? (
         <img src={centerUrl} alt="" draggable={false}
           onLoad={()=>setCenterOk(true)}
@@ -599,7 +599,7 @@ function CustomerPage({ onAdmin }) {
   const hasBg = settings.bg_image_url&&settings.bg_image_url.startsWith("http");
   const useImageWheel = settings.wheel_image_url&&settings.wheel_image_url.startsWith("http");
   const isMobile = typeof window!=="undefined" && window.innerWidth < 768;
-  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(window.innerWidth-32, 400) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
+  const wheelSize = typeof window!=="undefined" ? (isMobile ? Math.min(Math.floor(window.innerWidth*0.75), 340) : Math.min(showPrizeList?340:520,window.innerWidth/2-60)) : 380;
   const bgColor = settings.bg_color||"#F5F0E8";
 
   useEffect(() => {
