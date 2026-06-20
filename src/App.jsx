@@ -8,6 +8,7 @@ import {
   loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
   loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
   checkSpinRateLimit, deleteSpin, lookupSpinsByPhone,
+  bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance,
 } from "./supabase.js";
 
 /* ─── CONSTANTS ─── */
@@ -624,8 +625,10 @@ function CustomerPage({ onAdmin }) {
     const warnAt = parseInt(settings.rate_warn_threshold) || 5;
     const blockAt = parseInt(settings.rate_block_threshold) || 10;
     const todaySpins = await checkSpinRateLimit(p);
+    const allowance = await checkPhoneAllowance(p);
+    const effectiveBlock = blockAt + (allowance?.extra_spins || 0);
     const effectiveSpins = todaySpins + 1; // +1 cho bill đang nhập (chưa vào DB)
-    if (effectiveSpins >= blockAt) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
+    if (effectiveSpins >= effectiveBlock) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
     if (effectiveSpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
     const res=await doSpin(b,p,store.id||null,store.name||null);
@@ -1193,6 +1196,8 @@ function AdminPage({ onBack }) {
   const [filterBill, setFilterBill]   = useState("");
   const [filterValid, setFilterValid] = useState("all");
   const [reconSelected, setReconSelected] = useState(new Set());
+  const [spinSelected, setSpinSelected] = useState(new Set());
+  const [phoneAllowances, setPhoneAllowances] = useState([]);
 
   const [adminSettings, setAdminSettings] = useState({
     event_name:"",event_subtitle:"",description:"",
@@ -1291,6 +1296,10 @@ function AdminPage({ onBack }) {
       setPrizes(Array.isArray(p)?p:[]); setSpins(Array.isArray(s)?s:[]);
       setSpecials(Array.isArray(sp)?sp:[]); setBl(Array.isArray(b)?b:[]);
       setReconSelected(new Set());
+      setSpinSelected(new Set());
+      // Load phone allowances
+      const allowances = await loadPhoneAllowances();
+      setPhoneAllowances(Array.isArray(allowances)?allowances:[]);
       if (Array.isArray(v)&&v.length>0) {
         const map = {};
         v.forEach(r => {
@@ -1326,6 +1335,7 @@ function AdminPage({ onBack }) {
     const s = await loadSpins(date,{phone:filterPhone,bill:filterBill,valid:filterValid!=="all"?filterValid:undefined});
     setSpins(Array.isArray(s)?s:[]);
     setReconSelected(new Set());
+    setSpinSelected(new Set());
     // Detect suspicious phones
     if(Array.isArray(s)&&s.length>0){
       const phoneCount={};
@@ -1756,29 +1766,76 @@ function AdminPage({ onBack }) {
               <div style={{background:"#fef2f2",border:"2px solid #fca5a5",borderRadius:12,padding:"14px 18px",marginBottom:14}}>
                 <div style={{fontSize:14,fontWeight:800,color:"#dc2626",marginBottom:8}}>🚨 Cảnh báo — SĐT có ≥5 lượt quay trong ngày</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                  {suspiciousPhones.map(s=>(
+                  {suspiciousPhones.map(s=>{
+                    const hasAllowance = phoneAllowances.find(a=>a.phone===s.phone);
+                    return (
                     <div key={s.phone} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1px solid #fecaca",borderRadius:8,padding:"6px 12px"}}>
                       <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14}}>{s.phone}</span>
                       <span style={{background:"#dc2626",color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>{s.count} lượt</span>
+                      {hasAllowance&&<span style={{background:"#dbeafe",color:"#1e40af",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>+{hasAllowance.extra_spins} lượt</span>}
+                      <button onClick={async()=>{
+                        const extra = prompt(`Cấp thêm bao nhiêu lượt cho ${s.phone}?\n(Nhập số lượt thêm ngoài giới hạn ${parseInt(adminSettings.rate_block_threshold)||10})`,"5");
+                        if(!extra||isNaN(parseInt(extra)))return;
+                        await addPhoneAllowance(s.phone,parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                        loadAll();
+                      }} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #93c5fd",background:"#eff6ff",color:"#1e40af",cursor:"pointer",fontSize:11,fontWeight:700}} title="Cấp thêm lượt quay">✅ Cấp lượt</button>
                       <button onClick={async()=>{if(!confirm(`Thêm ${s.phone} vào blacklist?`))return;await addBlacklist(s.phone,"Spam ≥5 lượt/ngày");loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700}}>🚫 Ban</button>
+                    </div>);
+                  })}
+                </div>
+              </div>
+            )}
+            {/* ── PHONE ALLOWANCES ── */}
+            {phoneAllowances.length>0&&(
+              <div style={{background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+                <div style={{fontSize:14,fontWeight:800,color:"#1e40af",marginBottom:8}}>✅ SĐT được cấp thêm lượt quay</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  {phoneAllowances.map(a=>(
+                    <div key={a.phone} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 12px"}}>
+                      <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14}}>{a.phone}</span>
+                      <span style={{background:"#1e40af",color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>+{a.extra_spins} lượt</span>
+                      {a.note&&<span style={{fontSize:11,color:"#6b7280"}}>{a.note}</span>}
+                      <button onClick={async()=>{if(!confirm(`Thu hồi lượt quay thêm của ${a.phone}?`))return;await removePhoneAllowance(a.phone);loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",cursor:"pointer",fontSize:11}}>✕</button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+            {/* ── BULK ACTIONS ── */}
+            <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+              <button onClick={()=>{if(spinSelected.size===spins.length&&spins.length>0)setSpinSelected(new Set());else setSpinSelected(new Set(spins.map(s=>s.id)));}}
+                style={{padding:"6px 14px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#374151",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                {spinSelected.size===spins.length&&spins.length>0?"☑ Bỏ chọn tất cả":`☐ Chọn tất cả (${spins.length})`}
+              </button>
+              {spinSelected.size>0&&(
+                <>
+                  <span style={{fontSize:13,fontWeight:700,color:"#dc2626"}}>Đã chọn: {spinSelected.size}</span>
+                  <button onClick={async()=>{
+                    if(!confirm(`Xóa ${spinSelected.size} spin?\n\nBill sẽ được giải phóng để nhập lại.`))return;
+                    setLoading(true);
+                    await bulkDeleteSpins([...spinSelected]);
+                    setSpinSelected(new Set());
+                    searchSpins();
+                  }} style={{padding:"8px 18px",background:"#dc2626",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800}}>
+                    🗑 Xóa {spinSelected.size} spin
+                  </button>
+                </>
+              )}
+            </div>
             <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead><tr style={{background:"#f9fafb"}}>
-                  {["Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Trạng thái","Thời gian",""].map(h=><th key={h} style={th}>{h}</th>)}
+                  {["☐","Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Trạng thái","Thời gian",""].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {spins.length===0 ? <tr><td colSpan={8} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
+                  {spins.length===0 ? <tr><td colSpan={9} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
                   : spins.map(s=>{
                     // Detect sequential bill pattern
                     const billMatch = s.bill_code?.match(/^([A-Z.]+?)(\d{3,})$/);
                     const isSeq = billMatch && spins.some(o => o.id!==s.id && o.phone===s.phone && o.bill_code?.startsWith(billMatch[1]) && Math.abs(parseInt(o.bill_code.replace(billMatch[1],"")) - parseInt(billMatch[2]))===1);
                     return (
-                    <tr key={s.id} style={{background:isSeq?"#fef9f0":s.is_valid?"#fff":"#fef2f2"}}>
+                    <tr key={s.id} style={{background:spinSelected.has(s.id)?"#fef2f2":isSeq?"#fef9f0":s.is_valid?"#fff":"#fef2f2"}}>
+                      <td style={td}><input type="checkbox" checked={spinSelected.has(s.id)} onChange={e=>{const ns=new Set(spinSelected);e.target.checked?ns.add(s.id):ns.delete(s.id);setSpinSelected(ns);}}/></td>
                       <td style={{...td,fontFamily:"monospace",fontWeight:700}}>
                         {s.bill_code}
                         {isSeq&&<span style={{marginLeft:4,fontSize:10,color:"#e99849",fontWeight:800}} title="Bill có số liên tiếp — nghi ngờ gian lận">⚠️</span>}
@@ -1789,7 +1846,7 @@ function AdminPage({ onBack }) {
                       <td style={{...td,fontFamily:"monospace",fontWeight:700,color:"#e99849",background:s.voucher_code&&s.voucher_code!=="PENDING"?"#fef9f0":"transparent"}}>{s.voucher_code||"—"}</td>
                       <td style={td}><span style={{borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700,background:s.is_valid?"#f0fdf4":"#fef2f2",color:s.is_valid?"#065f46":"#dc2626"}}>{s.is_valid?"✅ Hợp lệ":"❌ Không HLệ"}</span></td>
                       <td style={{...td,fontSize:12,color:"#9ca3af"}}>{timeAgo(s.spun_at)}</td>
-                      <td style={td}><button onClick={async()=>{if(!confirm(`Xóa spin này? Bill "${s.bill_code}" sẽ được giải phóng để nhập lại.`))return;await deleteSpin(s.id);loadAll();}} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:11}} title="Xóa spin — giải phóng bill code">🗑</button></td>
+                      <td style={td}><button onClick={async()=>{if(!confirm(`Xóa spin này? Bill "${s.bill_code}" sẽ được giải phóng để nhập lại.`))return;await deleteSpin(s.id);searchSpins();}} style={{padding:"3px 8px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontSize:11}} title="Xóa spin — giải phóng bill code">🗑</button></td>
                     </tr>);
                   })}
                 </tbody>
