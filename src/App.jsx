@@ -1779,7 +1779,7 @@ function AdminPage({ onBack }) {
                       <button onClick={async()=>{
                         const extra = prompt(`Cấp thêm bao nhiêu lượt cho ${s.phone}?\n(Nhập số lượt thêm ngoài giới hạn ${parseInt(adminSettings.rate_block_threshold)||10})`,"5");
                         if(!extra||isNaN(parseInt(extra)))return;
-                        const ok = await addPhoneAllowance(s.phone,parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                        const ok = await addPhoneAllowance(s.phone,parseInt(extra));
                         if(ok) alert(`✅ Đã cấp thêm ${extra} lượt cho ${s.phone}`);
                         else alert(`❌ Lỗi khi cấp lượt cho ${s.phone}`);
                         loadAll();
@@ -1799,7 +1799,7 @@ function AdminPage({ onBack }) {
                   if(!ph)return;
                   const extra=prompt(`Cấp thêm bao nhiêu lượt cho ${ph}?`,"5");
                   if(!extra||isNaN(parseInt(extra)))return;
-                  const ok=await addPhoneAllowance(ph.replace(/\D/g,""),parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                  const ok=await addPhoneAllowance(ph.replace(/\D/g,""),parseInt(extra));
                   if(ok) alert(`✅ Đã cấp thêm ${extra} lượt cho ${ph}`);
                   else alert(`❌ Lỗi khi cấp lượt`);
                   loadAll();
