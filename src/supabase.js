@@ -318,3 +318,55 @@ export async function saveSetting(key, value) {
     return r.ok;
   } catch { return false; }
 }
+// =============================================
+// THÊM VÀO CUỐI FILE supabase.js
+// =============================================
+
+// ── BULK DELETE SPINS ──
+export async function bulkDeleteSpins(ids) {
+  if (!ids || ids.length === 0) return;
+  // Delete in batches of 50
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    const filter = batch.map(id => `id.eq.${id}`).join(",");
+    await fetch(`${URL}/rest/v1/spin_records?or=(${filter})`, {
+      method: "DELETE", headers: HDR,
+    });
+  }
+}
+
+// ── PHONE ALLOWANCE ──
+export async function loadPhoneAllowances() {
+  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?order=added_at.desc`, { headers: HDR });
+  if (!r.ok) return [];
+  return r.json();
+}
+
+export async function addPhoneAllowance(phone, extraSpins, note, addedBy) {
+  // Upsert: nếu phone đã có → cập nhật extra_spins
+  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?on_conflict=phone`, {
+    method: "POST",
+    headers: { ...HDR, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({ phone, extra_spins: extraSpins, note, added_by: addedBy }),
+  });
+  return r.ok;
+}
+
+export async function removePhoneAllowance(phone) {
+  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?phone=eq.${phone}`, {
+    method: "DELETE", headers: HDR,
+  });
+  return r.ok;
+}
+
+export async function checkPhoneAllowance(phone) {
+  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?phone=eq.${phone}&limit=1`, { headers: HDR });
+  if (!r.ok) return null;
+  const data = await r.json();
+  return data.length > 0 ? data[0] : null;
+}
+
+// =============================================
+// THÊM VÀO EXPORT (nếu dùng named exports):
+// bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance
+// =============================================
