@@ -256,7 +256,7 @@ export async function checkSpinRateLimit(phone) {
   const { start, end } = dayRange(today);
   const clean = phone.replace(/\D/g, "");
   const rows = await get("spin_records",
-    `phone=eq.${clean}&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}&select=id&limit=20`
+    `phone=eq.${clean}&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}&select=id&limit=100`
   );
   return rows.length;
 }
@@ -327,32 +327,29 @@ export async function saveSetting(key, value) {
   } catch { return false; }
 }
 
-// ─── PHONE ALLOWANCE (cấp thêm lượt quay) ───
+// ─── PHONE ALLOWANCE (dùng spin_settings, key = allow_XXXXXXXXXX) ───
 export async function loadPhoneAllowances() {
-  return get("spin_phone_allowance", "order=added_at.desc");
+  const rows = await get("spin_settings", "key=like.allow_*&order=key");
+  return rows.map(r => ({
+    phone: r.key.replace("allow_",""),
+    extra_spins: parseInt(r.value) || 0,
+  }));
 }
 
-export async function addPhoneAllowance(phone, extraSpins, note, addedBy) {
-  try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_phone_allowance?on_conflict=phone`, {
-      method: "POST",
-      headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ phone, extra_spins: extraSpins, note, added_by: addedBy }),
-    });
-    return r.ok;
-  } catch { return false; }
+export async function addPhoneAllowance(phone, extraSpins) {
+  const clean = phone.replace(/\D/g,"");
+  if (!clean) return false;
+  return saveSetting(`allow_${clean}`, String(extraSpins));
 }
 
 export async function removePhoneAllowance(phone) {
-  return remove("spin_phone_allowance", `phone=eq.${phone}`);
+  const clean = phone.replace(/\D/g,"");
+  return remove("spin_settings", `key=eq.allow_${clean}`);
 }
 
 export async function checkPhoneAllowance(phone) {
-  const clean = phone.replace(/\D/g, "");
-  try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_phone_allowance?phone=eq.${clean}&limit=1`, { headers: H });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data.length > 0 ? data[0] : null;
-  } catch { return null; }
+  const clean = phone.replace(/\D/g,"");
+  const rows = await get("spin_settings", `key=eq.allow_${clean}&limit=1`);
+  if (rows.length === 0) return null;
+  return { phone: clean, extra_spins: parseInt(rows[0].value) || 0 };
 }
