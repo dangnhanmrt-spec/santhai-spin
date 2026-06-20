@@ -10,7 +10,6 @@ export const supabaseClient = createClient(SUPA_URL, KEY);
 
 /* ═══ AUTH HELPERS ═══ */
 export async function checkEmailAccess(email) {
-  // Dùng raw fetch + maybeSingle pattern (tránh throw khi không tìm thấy)
   try {
     const r = await fetch(
       `${SUPA_URL}/rest/v1/allowed_emails?email=eq.${encodeURIComponent(email)}&limit=1`,
@@ -24,7 +23,7 @@ export async function checkEmailAccess(email) {
   }
 }
 
-/* ═══ RAW FETCH HELPERS (giữ nguyên) ═══ */
+/* ═══ RAW FETCH HELPERS ═══ */
 async function rpc(fn, params) {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, { method:"POST", headers:H, body:JSON.stringify(params) });
@@ -276,6 +275,15 @@ export async function deleteSpin(id) {
   return remove("spin_records", `id=eq.${id}`);
 }
 
+// ─── BULK DELETE SPINS ───
+export async function bulkDeleteSpins(ids) {
+  if (!ids || ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    await remove("spin_records", `id=in.(${batch.join(",")})`);
+  }
+}
+
 // ─── ALLOWED EMAILS (quản lý quyền truy cập) ───
 export async function loadAllowedEmails() {
   return get("allowed_emails", "order=created_at.desc&limit=100");
@@ -318,55 +326,33 @@ export async function saveSetting(key, value) {
     return r.ok;
   } catch { return false; }
 }
-// =============================================
-// THÊM VÀO CUỐI FILE supabase.js
-// =============================================
 
-// ── BULK DELETE SPINS ──
-export async function bulkDeleteSpins(ids) {
-  if (!ids || ids.length === 0) return;
-  // Delete in batches of 50
-  for (let i = 0; i < ids.length; i += 50) {
-    const batch = ids.slice(i, i + 50);
-    const filter = batch.map(id => `id.eq.${id}`).join(",");
-    await fetch(`${URL}/rest/v1/spin_records?or=(${filter})`, {
-      method: "DELETE", headers: HDR,
-    });
-  }
-}
-
-// ── PHONE ALLOWANCE ──
+// ─── PHONE ALLOWANCE (cấp thêm lượt quay) ───
 export async function loadPhoneAllowances() {
-  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?order=added_at.desc`, { headers: HDR });
-  if (!r.ok) return [];
-  return r.json();
+  return get("spin_phone_allowance", "order=added_at.desc");
 }
 
 export async function addPhoneAllowance(phone, extraSpins, note, addedBy) {
-  // Upsert: nếu phone đã có → cập nhật extra_spins
-  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?on_conflict=phone`, {
-    method: "POST",
-    headers: { ...HDR, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ phone, extra_spins: extraSpins, note, added_by: addedBy }),
-  });
-  return r.ok;
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_phone_allowance?on_conflict=phone`, {
+      method: "POST",
+      headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ phone, extra_spins: extraSpins, note, added_by: addedBy }),
+    });
+    return r.ok;
+  } catch { return false; }
 }
 
 export async function removePhoneAllowance(phone) {
-  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?phone=eq.${phone}`, {
-    method: "DELETE", headers: HDR,
-  });
-  return r.ok;
+  return remove("spin_phone_allowance", `phone=eq.${phone}`);
 }
 
 export async function checkPhoneAllowance(phone) {
-  const r = await fetch(`${URL}/rest/v1/spin_phone_allowance?phone=eq.${phone}&limit=1`, { headers: HDR });
-  if (!r.ok) return null;
-  const data = await r.json();
-  return data.length > 0 ? data[0] : null;
+  const clean = phone.replace(/\D/g, "");
+  try {
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_phone_allowance?phone=eq.${clean}&limit=1`, { headers: H });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.length > 0 ? data[0] : null;
+  } catch { return null; }
 }
-
-// =============================================
-// THÊM VÀO EXPORT (nếu dùng named exports):
-// bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance
-// =============================================
