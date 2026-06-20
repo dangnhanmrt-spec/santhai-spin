@@ -624,7 +624,7 @@ function CustomerPage({ onAdmin }) {
     const warnAt = parseInt(settings.rate_warn_threshold) || 5;
     const blockAt = parseInt(settings.rate_block_threshold) || 10;
     const todaySpins = await checkSpinRateLimit(p);
-    const effectiveSpins = todaySpins + billQueue.length; // Cộng cả bill đang chờ quay trong session
+    const effectiveSpins = todaySpins + 1; // +1 cho bill đang nhập (chưa vào DB)
     if (effectiveSpins >= blockAt) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
     if (effectiveSpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
