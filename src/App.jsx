@@ -1342,6 +1342,9 @@ function AdminPage({ onBack }) {
       s.forEach(r=>{ const ph=r.phone; if(ph){ phoneCount[ph]=(phoneCount[ph]||0)+1; } });
       setSuspiciousPhones(Object.entries(phoneCount).filter(([,c])=>c>=5).map(([ph,c])=>({phone:ph,count:c})));
     } else { setSuspiciousPhones([]); }
+    // Refresh phone allowances
+    const al = await loadPhoneAllowances();
+    setPhoneAllowances(Array.isArray(al)?al:[]);
     setLoading(false);
   },[date,filterPhone,filterBill,filterValid]);
 
@@ -1776,7 +1779,9 @@ function AdminPage({ onBack }) {
                       <button onClick={async()=>{
                         const extra = prompt(`Cấp thêm bao nhiêu lượt cho ${s.phone}?\n(Nhập số lượt thêm ngoài giới hạn ${parseInt(adminSettings.rate_block_threshold)||10})`,"5");
                         if(!extra||isNaN(parseInt(extra)))return;
-                        await addPhoneAllowance(s.phone,parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                        const ok = await addPhoneAllowance(s.phone,parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                        if(ok) alert(`✅ Đã cấp thêm ${extra} lượt cho ${s.phone}`);
+                        else alert(`❌ Lỗi khi cấp lượt cho ${s.phone}`);
                         loadAll();
                       }} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #93c5fd",background:"#eff6ff",color:"#1e40af",cursor:"pointer",fontSize:11,fontWeight:700}} title="Cấp thêm lượt quay">✅ Cấp lượt</button>
                       <button onClick={async()=>{if(!confirm(`Thêm ${s.phone} vào blacklist?`))return;await addBlacklist(s.phone,"Spam ≥5 lượt/ngày");loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700}}>🚫 Ban</button>
@@ -1786,21 +1791,32 @@ function AdminPage({ onBack }) {
               </div>
             )}
             {/* ── PHONE ALLOWANCES ── */}
-            {phoneAllowances.length>0&&(
-              <div style={{background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:12,padding:"14px 18px",marginBottom:14}}>
-                <div style={{fontSize:14,fontWeight:800,color:"#1e40af",marginBottom:8}}>✅ SĐT được cấp thêm lượt quay</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                  {phoneAllowances.map(a=>(
-                    <div key={a.phone} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 12px"}}>
-                      <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14}}>{a.phone}</span>
-                      <span style={{background:"#1e40af",color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>+{a.extra_spins} lượt</span>
-                      {a.note&&<span style={{fontSize:11,color:"#6b7280"}}>{a.note}</span>}
-                      <button onClick={async()=>{if(!confirm(`Thu hồi lượt quay thêm của ${a.phone}?`))return;await removePhoneAllowance(a.phone);loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",cursor:"pointer",fontSize:11}}>✕</button>
-                    </div>
-                  ))}
-                </div>
+            <div style={{background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                <span style={{fontSize:14,fontWeight:800,color:"#1e40af"}}>✅ SĐT được cấp thêm lượt quay</span>
+                <button onClick={async()=>{
+                  const ph=prompt("Nhập SĐT cần cấp thêm lượt:");
+                  if(!ph)return;
+                  const extra=prompt(`Cấp thêm bao nhiêu lượt cho ${ph}?`,"5");
+                  if(!extra||isNaN(parseInt(extra)))return;
+                  const ok=await addPhoneAllowance(ph.replace(/\D/g,""),parseInt(extra),`Cấp bởi admin`,user?.email||"");
+                  if(ok) alert(`✅ Đã cấp thêm ${extra} lượt cho ${ph}`);
+                  else alert(`❌ Lỗi khi cấp lượt`);
+                  loadAll();
+                }} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #93c5fd",background:"#fff",color:"#1e40af",cursor:"pointer",fontSize:12,fontWeight:700}}>+ Thêm SĐT</button>
               </div>
-            )}
+              {phoneAllowances.length===0?<div style={{fontSize:13,color:"#6b7280"}}>Chưa có SĐT nào được cấp thêm lượt</div>:(
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {phoneAllowances.map(a=>(
+                  <div key={a.phone} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 12px"}}>
+                    <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14}}>{a.phone}</span>
+                    <span style={{background:"#1e40af",color:"#fff",borderRadius:20,padding:"1px 8px",fontSize:11,fontWeight:700}}>+{a.extra_spins} lượt</span>
+                    {a.note&&<span style={{fontSize:11,color:"#6b7280"}}>{a.note}</span>}
+                    <button onClick={async()=>{if(!confirm(`Thu hồi lượt quay thêm của ${a.phone}?`))return;await removePhoneAllowance(a.phone);loadAll();}} style={{padding:"2px 8px",borderRadius:4,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",cursor:"pointer",fontSize:11}}>✕</button>
+                  </div>
+                ))}
+              </div>)}
+            </div>
             {/* ── BULK ACTIONS ── */}
             <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
               <button onClick={()=>{if(spinSelected.size===spins.length&&spins.length>0)setSpinSelected(new Set());else setSpinSelected(new Set(spins.map(s=>s.id)));}}
