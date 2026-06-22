@@ -9,6 +9,7 @@ import {
   loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
   checkSpinRateLimit, deleteSpin, lookupSpinsByPhone,
   bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance,
+  archiveDailyBills, loadBillArchive, checkBillReuse,
 } from "./supabase.js";
 
 /* ─── CONSTANTS ─── */
@@ -17,41 +18,51 @@ const SUPER_ADMIN = "dangnhan.mrt@gmail.com";
 
 /* ─── STORE MAP ─── */
 const STORE_PREFIXES = [
-  ["SR.NTT","SanThai - KG1 - Rạch Giá 1"],["SANTHAI","Santhai - Thới Lai"],
-  ["SXVNT","SanThai - CT5 - XVNT"],["STNOT","SanThai - CT9 - Thốt Nốt"],
-  ["SHVTA","SanThai - LA1 - Tân An"],["STPBL","SanThai - BL2 - Trần Phú"],
-  ["SBTRE","SanThai - BT1 - Bến Tre"],["CAUKE","Santhai - Cầu Kè"],
-  ["BATRI","Santhai - Ba Tri"],["THDLX","SanThai - AG1 - THĐ1"],
-  ["SMT10","SanThai - CT1 - Mậu Thân"],["SMT15","SanThai - TG1 - Lê Đại Hành"],
-  ["S.TNV","SanThai - VL3 - Trưng Vương"],["263AA","SanThai - CT6 - NVC2"],
-  ["STCL","SanThai - Càng Long"],["DTMT","SanThai - Mỹ Thọ"],
-  ["DTHH","SanThai - Đinh Tiên Hoàng"],["GCTG","Santhai - Gò Công"],
+  // 75 stores — sorted longest-first for correct matching
+  // 7 chars
+  ["THOILAI","Santhai - Thới Lai"],["CHAUDOC","SanThai - AG9 - Châu Đốc"],
+  ["CANDANG","Santhai - Cần Đăng"],["STRANG","SanThai - ST1 - 30 Tháng Tư"],
+  ["CHOMOI","SanThai - AG8 - Chợ Mới"],["DUCHOA","SanThai - LA2 - Đức Hòa"],
+  ["BENLUC","Santhai - Bến Lức"],["CAIDAU","Santhai - Cái Dầu"],
+  // 6 chars
+  ["SR.NTT","SanThai - KG1 - Rạch Giá 1"],["SXVNT","SanThai - CT5 - XVNT"],
+  ["STNOT","SanThai - CT9 - Thốt Nốt"],["SHVTA","SanThai - LA1 - Tân An"],
+  ["STPBL","SanThai - BL2 - Trần Phú"],["SBTRE","SanThai - BT1 - Bến Tre"],
+  ["THDLX","SanThai - AG1 - THĐ1"],["THDMT","SanThai - AG4 - THĐ2"],
+  ["TGLDH","SanThai - TG1 - Lê Đại Hành MT1"],["CLPHL","SanThai - ĐT5 - Cao Lãnh 2"],
+  ["TTHAI","SanThai - AG3 - Thành Thái"],["CAMAU","SanThai - CM1 - Cà Mau"],
+  // 5 chars
+  ["S.TNV","SanThai - VL3 - Trưng Nữ Vương"],["263AA","SanThai - CT6 - NVC2"],
+  ["CAUKE","Santhai - Cầu Kè"],["BATRI","Santhai - Ba Tri"],
+  ["DTCTH","SanThai - ĐT9 - Châu Thành"],["STCL","SanThai - Càng Long"],
+  // 4 chars
+  ["DTMT","SanThai - Mỹ Thọ"],["DTHH","SanThai - Đinh Tiên Hoàng"],
+  ["DTML","SanThai - ĐT8 - Mỹ Long"],["GCTG","Santhai - Gò Công, Tiền Giang"],
   ["TVVL","Santhai - Trà Vinh"],["THKG","Santhai - Tân Hiệp, Kiên Giang"],
   ["TOVL","Santhai - Trà Ôn, Vĩnh Long"],["TBVL","SanThai - VL5 - Tam Bình"],
-  ["SNVL","SanThai - CT7 - NVL"],["STML","SanThai - KG3 - Minh Lương"],
-  ["SMT2","SanThai - TG2 - Ấp Bắc"],["SDH2","SanThai - LA4 - Đức Hòa 2"],
-  ["SLX4","SanThai - AG4 - THĐ2"],["SLX5","SanThai - AG5 - Phú Hòa"],
-  ["SCD2","Santhai - Cờ Đỏ 2"],["S.GR","SanThai - BL1 - Giá Rai"],
-  ["S.TC","SanThai - AG6 - Tân Châu"],["S.OM","SanThai - CT10 - Ô Môn"],
-  ["S.CD","SanThai - LA3 - Cần Đước"],["NGA5","Santhai - Ngã 5"],
-  ["SMT","SanThai - CT1 - Mậu Thân"],["SDH","SanThai - LA2 - Đức Hòa"],
-  ["SLX","SanThai - AG4 - THĐ2"],["SCD","SanThai - AG9 - Châu Đốc"],
-  ["SCM","SanThai - Chợ Mới / Cà Mau"],["SCT","Santhai - Cái Tắc"],
-  ["S3T","SanThai - CT3 - Ba Tháng Hai"],["S30","SanThai - ST1 - 30 Tháng"],
-  ["SAB","SanThai - KG5 - An Biên"],["SAC","SanThai - AG7 - An Châu"],
-  ["SBD","Santhai - Bình Đại"],["SBT","SanThai - VL2 - Bình Tâm"],
-  ["SCC","Santhai - Cái Côn"],["SCL","SanThai - ĐT3 - Cao Lãnh"],
-  ["SGR","SanThai - KG4 - Giồng Riềng"],["SHG","SanThai - HG1 - Ngã Bảy"],
-  ["SLH","SanThai - VL4 - Long Hồ"],["SLV","Santhai - Lai Vung"],
-  ["SML","SanThai - ĐT8 - Mỹ Long"],["SND","SanThai - CT2 - NVC1"],
+  ["SNVL","SanThai - CT7 - NVL"],["KGML","SanThai - KG3 - Minh Lương"],
+  ["TGAB","SanThai - TG2 - Ấp Bắc MT2"],["TGTH","Santhai - Tân Hiệp, Châu Thành"],
+  ["S.GR","SanThai - BL1 - Giá Rai"],["S.TC","SanThai - AG6 - Tân Châu"],
+  ["S.OM","SanThai - CT10 - Ô Môn"],["S.CD","SanThai - LA3 - Cần Đước"],
+  ["NGA5","Santhai - Ngã 5"],["S3T2","SanThai - CT3 - Ba Tháng Hai"],
+  ["HGCT","Santhai - Cái Tắc"],["PHLX","SanThai - AG5 - Phú Hoà"],
+  ["AGML","Santhai - Mỹ Luông"],["CODO","SanThai - CT11 - Cờ Đỏ"],
+  // 3 chars
+  ["SMT","SanThai - CT1 - Mậu Thân"],["SAB","SanThai - KG5 - An Biên"],
+  ["SAC","SanThai - AG7 - An Châu"],["SBD","Santhai - Bình Đại"],
+  ["SBT","SanThai - VL2 - Bình Tân"],["SCC","Santhai - Cái Côn"],
+  ["SCL","SanThai - ĐT3 - Cao Lãnh"],["SGR","SanThai - KG4 - Giồng Riềng"],
+  ["SHG","SanThai - HG1 - Ngã Bảy"],["SLH","SanThai - VL4 - Long Hồ"],
+  ["SLV","Santhai - Lai Vung"],["SND","SanThai - CT2 - NVC1"],
   ["SPD","SanThai - CT12 - Phong Điền"],["SPH","SanThai - CT8 - Phạm Hùng"],
   ["SPL","SanThai - BL3 - Phước Long"],["SRG","SanThai - KG2 - Rạch Giá 2"],
   ["SSD","SanThai - ĐT1 - Sa Đéc"],["STB","SanThai - ĐT7 - Thanh Bình"],
   ["STC","Santhai - Tiểu Cần"],["STM","SanThai - ĐT6 - Tháp Mười"],
   ["SVT","Santhai - Vị Thanh"],["RG3","SanThai - Rạch Giá 3"],
-  ["LVO","Santhai - Lấp Vò"],["BM","SanThai - VL1 - Bình Minh"],
-  ["ML","Santhai - Mỹ Luông"],["RG","SanThai - Rạch Giá 3"],
-  ["CD","Santhai - Cần Đăng / Cái Dầu"],["S","Santhai - Bến Lức"],
+  ["LVO","Santhai - Lấp Vò"],["MHB","SanThai - LA4 - Đức Hòa 1"],
+  ["CD2","Santhai - Cờ Đỏ 2"],["T11","Santhai - Thứ 11, Kiên Giang"],
+  // 2 chars
+  ["BM","SanThai - VL1 - Bình Minh"],
 ];
 function detectStore(billCode) {
   const code = (billCode||"").trim().toUpperCase().replace(/\u200b/g,"");
@@ -1198,6 +1209,8 @@ function AdminPage({ onBack }) {
   const [reconSelected, setReconSelected] = useState(new Set());
   const [spinSelected, setSpinSelected] = useState(new Set());
   const [phoneAllowances, setPhoneAllowances] = useState([]);
+  const [archiveData, setArchiveData] = useState([]);
+  const [archiveDate, setArchiveDate] = useState(new Date().toISOString().slice(0,10));
 
   const [adminSettings, setAdminSettings] = useState({
     event_name:"",event_subtitle:"",description:"",
@@ -1277,6 +1290,7 @@ function AdminPage({ onBack }) {
     {id:"prizes",    label:"🎁 Cấu hình giải"},
     {id:"spins",     label:"📋 Lịch sử"},
     {id:"reconcile", label:"🔍 Đối chiếu"},
+    {id:"archive",   label:"📦 Lưu trữ bill"},
     {id:"vouchers",  label:"🎟 Vouchers"},
     {id:"vdetail",   label:"🔧 Chi tiết voucher"},
     {id:"test",      label:"🧪 Test Mode"},
@@ -1933,6 +1947,71 @@ function AdminPage({ onBack }) {
             </div>
           </div>);
         })()}
+
+        {/* ── LƯU TRỮ BILL ── */}
+        {tab==="archive"&&(
+          <div>
+            <h3 style={{fontSize:16,fontWeight:900,marginBottom:12}}>📦 Lưu trữ bill hàng ngày</h3>
+            <div style={{background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#065f46",lineHeight:1.8}}>
+              <b>Cách hoạt động:</b> Cuối mỗi ngày, bấm "Backup" để lưu trữ tất cả bill đã sử dụng trong ngày. Dữ liệu backup dùng để đối chiếu khi hệ thống iPOS xuất bill trùng mã qua các ngày khác nhau.
+            </div>
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <input type="date" value={archiveDate} onChange={e=>setArchiveDate(e.target.value)} style={inp}/>
+              <button onClick={async()=>{
+                setLoading(true);
+                const result = await archiveDailyBills(archiveDate);
+                if(typeof result === "number" || (result && !result.error)){
+                  const cnt = typeof result === "number" ? result : result;
+                  alert(`✅ Đã backup ${cnt} bill ngày ${archiveDate}`);
+                } else {
+                  alert(`❌ Lỗi backup: ${result?.message || "Không rõ"}`);
+                }
+                setLoading(false);
+              }} disabled={loading} style={{padding:"8px 20px",background:"#1b459c",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800}}>
+                {loading?"⏳":"📦"} Backup ngày {archiveDate}
+              </button>
+              <button onClick={async()=>{
+                setLoading(true);
+                const data = await loadBillArchive(archiveDate);
+                setArchiveData(Array.isArray(data)?data:[]);
+                setLoading(false);
+              }} disabled={loading} style={{padding:"8px 20px",background:"#e99849",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:800}}>
+                {loading?"⏳":"🔍"} Xem backup ngày {archiveDate}
+              </button>
+            </div>
+            {archiveData.length>0&&(
+              <div>
+                <div style={{fontSize:13,color:"#6b7280",marginBottom:8}}>📋 {archiveData.length} bill đã lưu trữ ngày {archiveDate}</div>
+                <div style={{marginBottom:10}}>
+                  <button onClick={()=>{
+                    const rows=archiveData.map(a=>`${a.bill_code},${a.phone},${a.store_name||""},${a.prize_name||""},${a.is_valid?"valid":"invalid"},${a.spun_at||""}`).join("\n");
+                    const a2=document.createElement("a"); a2.href="data:text/csv;charset=utf-8,\uFEFFBill,SĐT,Cửa hàng,Giải,Trạng thái,Thời gian\n"+rows; a2.download=`archive_${archiveDate}.csv`; a2.click();
+                  }} style={{padding:"6px 14px",background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,color:"#065f46",cursor:"pointer",fontSize:12,fontWeight:700}}>↓ Xuất CSV</button>
+                </div>
+                <div style={{overflowX:"auto",borderRadius:10,border:"1px solid #e5e7eb"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead><tr style={{background:"#f9fafb"}}>
+                      {["Mã Bill","SĐT","Cửa hàng","Giải","Trạng thái","Thời gian quay"].map(h=><th key={h} style={th}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {archiveData.map((a,i)=>(
+                        <tr key={i} style={{background:a.is_valid?"#fff":"#fef2f2"}}>
+                          <td style={{...td,fontFamily:"monospace",fontWeight:700}}>{a.bill_code}</td>
+                          <td style={td}>{a.phone}</td>
+                          <td style={{...td,fontSize:12,color:"#6b7280"}}>{a.store_name||"—"}</td>
+                          <td style={{...td,fontWeight:700}}>{a.prize_name||"—"}</td>
+                          <td style={td}><span style={{borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700,background:a.is_valid?"#f0fdf4":"#fef2f2",color:a.is_valid?"#065f46":"#dc2626"}}>{a.is_valid?"✅":"❌"}</span></td>
+                          <td style={{...td,fontSize:12,color:"#9ca3af"}}>{a.spun_at?new Date(a.spun_at).toLocaleString("vi-VN"):""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {archiveData.length===0&&<div style={{textAlign:"center",color:"#9ca3af",padding:20,fontSize:13}}>Chưa có dữ liệu backup cho ngày này. Bấm "Backup" để lưu trữ.</div>}
+          </div>
+        )}
 
         {/* ── VOUCHERS ── */}
         {tab==="vouchers"&&(
