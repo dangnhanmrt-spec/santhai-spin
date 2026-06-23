@@ -353,3 +353,18 @@ export async function checkPhoneAllowance(phone) {
   if (rows.length === 0) return null;
   return { phone: clean, extra_spins: parseInt(rows[0].value) || 0 };
 }
+
+// ─── BILL ARCHIVE (lưu trữ bill hàng ngày) ───
+export async function archiveDailyBills(date) {
+  return rpc("archive_daily_bills", { p_date: date });
+}
+
+export async function loadBillArchive(date) {
+  return get("spin_bill_archive", `archive_date=eq.${date}&order=bill_code&limit=2000`);
+}
+
+// ─── CHECK BILL REUSE (kiểm tra bill trùng xuyên ngày) ───
+export async function checkBillReuse(billCode) {
+  const rows = await get("spin_records", `bill_code=eq.${encodeURIComponent(billCode)}&select=id,phone,spun_at&limit=5`);
+  return rows;
+}
