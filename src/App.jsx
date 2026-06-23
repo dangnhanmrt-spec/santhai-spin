@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   supabaseClient, checkEmailAccess,
   doSpin, loadActivePrizes, loadAllPrizes, savePrize, deletePrize, updatePrizesOrder, resetDefaultPrizes, testConnection,
@@ -623,6 +623,22 @@ function CustomerPage({ onAdmin }) {
     return()=>clearInterval(t);
   },[]);
 
+  const leaderboard = useMemo(() => {
+    if (!stats.length) return { rows: [], lastUpdate: null };
+    const byStore = {};
+    let lastUpdate = null;
+    for (const r of stats) {
+      const key = r.store_id || r.store_name || "?";
+      if (!byStore[key]) byStore[key] = { name: r.store_name || key, total: 0, v30: 0, v15: 0, miss: 0 };
+      byStore[key].total++;
+      if (r.prize_name && r.prize_name.includes("30")) byStore[key].v30++;
+      if (r.prize_name && r.prize_name.includes("15")) byStore[key].v15++;
+      if (r.prize_type === "viral") byStore[key].miss++;
+      if (r.spun_at && (!lastUpdate || r.spun_at > lastUpdate)) lastUpdate = r.spun_at;
+    }
+    return { rows: Object.values(byStore).sort((a, b) => b.total - a.total), lastUpdate };
+  }, [stats]);
+
   const handleBillChange = v => { setBill(v.toUpperCase()); setErr(""); };
 
   const handleAddBill = async () => {
@@ -841,29 +857,27 @@ function CustomerPage({ onAdmin }) {
       <div style={{background:"rgba(255,255,255,.95)",borderTop:"2px solid #e99849",padding:"28px 24px"}}>
         <div style={{maxWidth:900,margin:"0 auto"}}>
           <div style={{fontSize:20,fontWeight:900,color:"#1b459c",marginBottom:4,fontFamily:"'Nunito',sans-serif"}}>🐱 Bảng xếp hạng cửa hàng</div>
-          <div style={{fontSize:13,color:"#78716c",marginBottom:16}}>Cập nhật mỗi phút</div>
+          <div style={{fontSize:13,color:"#78716c",marginBottom:16}}>Cập nhật lúc: {leaderboard.lastUpdate ? new Date(leaderboard.lastUpdate).toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "—"}</div>
           <div style={{overflowX:"auto",borderRadius:14,border:"2px solid #e99849",boxShadow:"0 2px 12px rgba(233,152,73,.12)"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
               <thead>
                 <tr style={{background:"#1b459c"}}>
-                  {["#","Cửa hàng","Tổng lượt quay","Giải lớn 🏆","Hoạt động gần nhất"].map(h=>(
+                  {["#","Cửa hàng","Lượt quay","30 ngày","Topping","Mất lượt"].map(h=>(
                     <th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:"#FFFFFF",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {stats.length===0 ? (
-                  <tr><td colSpan={5} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
-                ) : stats.map((s,i)=>(
-                  <tr key={s.store_id} style={{borderTop:"1px solid #e8d5b7",background:i%2===0?"#FFFFFF":"#FFF8EE"}}>
+                {leaderboard.rows.length===0 ? (
+                  <tr><td colSpan={6} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
+                ) : leaderboard.rows.map((s,i)=>(
+                  <tr key={i} style={{borderTop:"1px solid #e8d5b7",background:i%2===0?"#FFFFFF":"#FFF8EE"}}>
                     <td style={{padding:"11px 14px",fontWeight:900,color:i<3?"#e99849":"#78716c",fontSize:16}}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</td>
-                    <td style={{padding:"11px 14px",fontWeight:700,color:"#1c1917"}}>{s.store_name||s.store_id}</td>
-                    <td style={{padding:"11px 14px",color:"#e99849",fontWeight:800,fontSize:16}}>{s.total_spins}</td>
-                    <td style={{padding:"11px 14px"}}>
-                      {s.big_wins>0 ? <span style={{background:"#FFF8EE",border:"2px solid #e99849",borderRadius:20,padding:"3px 10px",fontSize:13,fontWeight:800,color:"#1b459c"}}>🏆 {s.big_wins}</span>
-                      : <span style={{color:"#a8a29e",fontSize:13}}>—</span>}
-                    </td>
-                    <td style={{padding:"11px 14px",color:"#78716c",fontSize:13}}>{timeAgo(s.last_spin)}</td>
+                    <td style={{padding:"11px 14px",fontWeight:700,color:"#1c1917"}}>{s.name}</td>
+                    <td style={{padding:"11px 14px",color:"#e99849",fontWeight:800,fontSize:16}}>{s.total}</td>
+                    <td style={{padding:"11px 14px"}}>{s.v30>0?<span style={{background:"#fef2f2",border:"1px solid #ef4444",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#dc2626"}}>🏆 {s.v30}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
+                    <td style={{padding:"11px 14px"}}>{s.v15>0?<span style={{background:"#fef9c3",border:"1px solid #eab308",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#a16207"}}>🎫 {s.v15}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
+                    <td style={{padding:"11px 14px"}}>{s.miss>0?<span style={{fontSize:13,color:"#6b7280"}}>{s.miss}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
                   </tr>
                 ))}
               </tbody>
