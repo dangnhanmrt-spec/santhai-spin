@@ -174,7 +174,7 @@ export async function updatePrizesOrder(prizes) {
 
 // ─── PUBLIC STATS ───
 export async function loadStoreStats() {
-  return get("store_spin_stats", "limit=100");
+  return get("spin_records", "select=store_id,store_name,prize_name,prize_type,spun_at&is_valid=eq.true&order=spun_at.desc&limit=10000");
 }
 
 // ─── STORES ───
