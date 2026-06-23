@@ -638,7 +638,7 @@ function CustomerPage({ onAdmin }) {
     const todaySpins = await checkSpinRateLimit(p);
     const allowance = await checkPhoneAllowance(p);
     const effectiveBlock = blockAt + (allowance?.extra_spins || 0);
-    const effectiveSpins = todaySpins + 1; // +1 cho bill đang nhập (chưa vào DB)
+    const effectiveSpins = Math.max(todaySpins, billQueue.length) + 1; // đếm cả queue client-side chống lách
     if (effectiveSpins >= effectiveBlock) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
     if (effectiveSpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
