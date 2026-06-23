@@ -252,7 +252,7 @@ export async function bulkDeleteVouchers(ids) {
 
 // ─── RATE LIMIT (chống spam) ───
 export async function checkSpinRateLimit(phone) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10); // Vietnam UTC+7
   const { start, end } = dayRange(today);
   const clean = phone.replace(/\D/g, "");
   const rows = await get("spin_records",
