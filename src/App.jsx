@@ -5,7 +5,7 @@ import {
   loadStoreStats, loadSettings, saveSetting,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
-  loadPrizeVouchers, deleteVoucher, bulkDeleteVoucheras,
+  loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
   loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
   checkSpinRateLimit, deleteSpin, lookupSpinsByPhone,
   bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance,
@@ -689,16 +689,16 @@ function CustomerPage({ onAdmin }) {
   return (
     <div style={{minHeight:"100vh",background:bgColor}}>
       <style>{G}</style>
-      <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <div style={{fontSize:24,fontWeight:900,color:"#fff",fontFamily:"'Nunito',sans-serif",letterSpacing:1}}>
-            🎯 {settings.event_name||"SanThai"}
+      <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:isMobile?"14px 18px":"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:isMobile?20:24,fontWeight:900,color:"#fff",fontFamily:"'Nunito',sans-serif",letterSpacing:1}}>
+            {settings.event_name||"SanThai"}
           </div>
-          <div style={{fontSize:13,color:"rgba(255,255,255,.85)",fontWeight:600}}>
+          <div style={{fontSize:isMobile?12:13,color:"rgba(255,255,255,.85)",fontWeight:600}}>
             {settings.event_subtitle||"Vòng Quay May Mắn"}
           </div>
         </div>
-        <div onClick={onAdmin} style={{fontSize:11,color:"rgba(255,255,255,.3)",cursor:"default",userSelect:"none"}}>v3</div>
+        <div onClick={onAdmin} style={{width:40,height:40,cursor:"default",userSelect:"none"}}></div>
       </div>
 
       <div style={{display:"flex",flexDirection:isMobile?"column":"row",minHeight:isMobile?"auto":"calc(100vh - 80px - 60px)"}}>
@@ -712,7 +712,7 @@ function CustomerPage({ onAdmin }) {
               color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
               boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"0 2px 8px rgba(0,0,0,.1)",
               animation:billQueue.length>0&&spinIdx<0?"pulse-ring 1.5s infinite":"none"}}>
-              🎯 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
+              🍥 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
               {spinIdx>=0&&spinning&&` — Lượt ${spinIdx+1}/${billQueue.length}`}
             </div>
             <div style={{position:"relative",display:"inline-block"}}>
@@ -737,7 +737,7 @@ function CustomerPage({ onAdmin }) {
         {/* LEFT: Form */}
         <div style={{flex:isMobile?"none":"1 1 50%",padding:isMobile?"20px 16px":"28px 24px",background:"rgba(255,255,255,.95)",borderRight:isMobile?"none":"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,overflow:"auto"}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
-            ⚠️ Mã bill sẽ được hệ thống đối chiếu liên tục. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
+            ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
           {settings.description&&(
             <div>
@@ -778,7 +778,7 @@ function CustomerPage({ onAdmin }) {
           </button>
           {billQueue.length>0&&(
             <div style={{background:"#f0fdf4",borderRadius:12,padding:"12px 14px",border:"2px solid #a7f3d0"}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#065f46",marginBottom:8}}>🎯 Đã nhận {billQueue.length} lượt quay:</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#065f46",marginBottom:8}}>🍥 Đã nhận {billQueue.length} lượt quay:</div>
               {billQueue.map((q,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:13,color:"#374151",marginBottom:4,padding:"4px 0",borderBottom:"1px solid #d1fae5"}}>
                   <span style={{fontFamily:"monospace",fontWeight:700}}>{q.billCode}</span>
@@ -807,7 +807,7 @@ function CustomerPage({ onAdmin }) {
             color:billQueue.length>0&&spinIdx<0?"#fff":"#888888",
             boxShadow:billQueue.length>0&&spinIdx<0?"0 4px 16px rgba(233,152,73,.45)":"none",
             animation:billQueue.length>0&&spinIdx<0?"pulse-ring 1.5s infinite":"none",transition:"all .35s ease"}}>
-            🎯 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
+            🍥 {Math.max(0,billQueue.length-Math.max(0,spinIdx))} lượt quay
             {spinIdx>=0&&spinning&&` — Lượt ${spinIdx+1}/${billQueue.length}`}
           </div>
 
