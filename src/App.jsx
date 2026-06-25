@@ -496,11 +496,6 @@ function ResultModal({ result, phone, onClose, closeLabel, settings }) {
   const big   = result.prize_type==="special";
   const viral = result.prize_type==="viral";
   const code  = result.voucher_code;
-  const expiry = new Date(); expiry.setDate(expiry.getDate()+30);
-  const dd=String(expiry.getDate()).padStart(2,"0");
-  const mm=String(expiry.getMonth()+1).padStart(2,"0");
-  const yy=String(expiry.getFullYear()).slice(2);
-  const hsd = `${dd}/${mm}/${yy}`;
   const s = settings || {};
 
   return (
@@ -539,8 +534,9 @@ function ResultModal({ result, phone, onClose, closeLabel, settings }) {
                 </div>
                 <div style={{background:"#f0fdf4",border:"2px solid #10b981",borderRadius:12,padding:"13px 16px",fontSize:14,color:"#065f46",lineHeight:1.8,textAlign:"left"}}>
                   🧋 Mã voucher của bạn là <strong style={{color:"#d4822a",fontFamily:"monospace"}}>"{code}"</strong>.<br/>
-                  HSD là <strong>{hsd}</strong> <span style={{fontSize:12,color:"#6b7280"}}>(30 ngày từ ngày up lên)</span>.<br/>
-                  <span style={{fontSize:13,color:"#047857"}}>{s.normal_voucher_note||"Vui lòng lưu mã hoặc chụp màn hình để đổi thưởng nha 📸"}</span>
+                  HSD hết <strong>31/07/2026</strong>. Không áp dụng cùng các chương trình khác.<br/>
+                  <span style={{fontSize:13,color:"#047857"}}>{s.normal_voucher_note||"Vui lòng chụp màn hình hoặc lưu mã để đổi thưởng nha 📸"}</span>
+                  <div style={{marginTop:8,fontSize:12,color:"#6b7280",lineHeight:1.5}}>Lưu ý: Voucher topping đổi kèm khi mua 1 sản phẩm nước. Áp dụng mua trực tiếp tại cửa hàng (Trừ các cửa hàng đang khai trương).</div>
                 </div>
               </>
             ) : code==="PENDING" ? (
