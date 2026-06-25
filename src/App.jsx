@@ -5,7 +5,7 @@ import {
   loadStoreStats, loadSettings, saveSetting,
   loadSpins, loadSpecialWinners, loadBlacklist, loadVouchers,
   adminInvalidate, importVouchers, addBlacklist, removeBlacklist, updateSpecialStatus,
-  loadPrizeVouchers, deleteVoucher, bulkDeleteVouchers,
+  loadPrizeVouchers, deleteVoucher, bulkDeleteVoucheras,
   loadAllowedEmails, addAllowedEmail, removeAllowedEmail,
   checkSpinRateLimit, deleteSpin, lookupSpinsByPhone,
   bulkDeleteSpins, loadPhoneAllowances, addPhoneAllowance, removePhoneAllowance, checkPhoneAllowance,
@@ -862,14 +862,14 @@ function CustomerPage({ onAdmin }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
               <thead>
                 <tr style={{background:"#1b459c"}}>
-                  {["#","Cửa hàng","Lượt quay","30 ngày","Topping","Mất lượt"].map(h=>(
+                  {["#","Cửa hàng","Lượt quay","30 ngày","Topping"].map(h=>(
                     <th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:"#FFFFFF",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {leaderboard.rows.length===0 ? (
-                  <tr><td colSpan={6} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
+                  <tr><td colSpan={5} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
                 ) : leaderboard.rows.map((s,i)=>(
                   <tr key={i} style={{borderTop:"1px solid #e8d5b7",background:i%2===0?"#FFFFFF":"#FFF8EE"}}>
                     <td style={{padding:"11px 14px",fontWeight:900,color:i<3?"#e99849":"#78716c",fontSize:16}}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</td>
@@ -877,7 +877,6 @@ function CustomerPage({ onAdmin }) {
                     <td style={{padding:"11px 14px",color:"#e99849",fontWeight:800,fontSize:16}}>{s.total}</td>
                     <td style={{padding:"11px 14px"}}>{s.v30>0?<span style={{background:"#fef2f2",border:"1px solid #ef4444",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#dc2626"}}>🏆 {s.v30}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
                     <td style={{padding:"11px 14px"}}>{s.v15>0?<span style={{background:"#fef9c3",border:"1px solid #eab308",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#a16207"}}>🎫 {s.v15}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
-                    <td style={{padding:"11px 14px"}}>{s.miss>0?<span style={{fontSize:13,color:"#6b7280"}}>{s.miss}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1220,6 +1219,7 @@ function AdminPage({ onBack }) {
   const [filterPhone, setFilterPhone] = useState("");
   const [filterBill, setFilterBill]   = useState("");
   const [filterValid, setFilterValid] = useState("all");
+  const [filterPrize, setFilterPrize] = useState("all");
   const [reconSelected, setReconSelected] = useState(new Set());
   const [spinSelected, setSpinSelected] = useState(new Set());
   const [phoneAllowances, setPhoneAllowances] = useState([]);
@@ -1769,24 +1769,35 @@ function AdminPage({ onBack }) {
                 <option value="yes">Hợp lệ</option>
                 <option value="no">Không HL</option>
               </select>
+              <select value={filterPrize} onChange={e=>{setFilterPrize(e.target.value);}} style={{...inp,padding:"6px 10px",fontSize:13,width:150}}>
+                <option value="all">Tất cả giải</option>
+                <option value="30">🏆 Voucher 30 ngày</option>
+                <option value="15">🎫 15 phần topping</option>
+                <option value="viral">❌ Mất lượt</option>
+              </select>
               <button onClick={searchSpins} style={{padding:"6px 14px",background:"#1b459c",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>Áp dụng</button>
-              {(filterPhone||filterBill||filterValid!=="all")&&<button onClick={()=>{setFilterPhone("");setFilterBill("");setFilterValid("all");}} style={{padding:"6px 12px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#6b7280",cursor:"pointer",fontSize:12}}>✕ Xóa lọc</button>}
+              {(filterPhone||filterBill||filterValid!=="all"||filterPrize!=="all")&&<button onClick={()=>{setFilterPhone("");setFilterBill("");setFilterValid("all");setFilterPrize("all");}} style={{padding:"6px 12px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#6b7280",cursor:"pointer",fontSize:12}}>✕ Xóa lọc</button>}
               <div style={{marginLeft:"auto",display:"flex",gap:6}}>
                 <button onClick={()=>{
-                  const rows=spins.map(s=>`${s.bill_code},${s.phone},${s.store_name||s.store_id||""},${s.prize_name||""},${s.voucher_code||""},${s.is_valid?"valid":"invalid"},${s.spun_at||""}`).join("\n");
+                  const data=filterPrize==="all"?spins:spins.filter(s=>filterPrize==="30"?s.prize_name&&s.prize_name.includes("30"):filterPrize==="15"?s.prize_name&&s.prize_name.includes("15"):s.prize_type==="viral");
+                  const rows=data.map(s=>`${s.bill_code},${s.phone},${s.store_name||s.store_id||""},${s.prize_name||""},${s.voucher_code||""},${s.is_valid?"valid":"invalid"},${s.spun_at||""}`).join("\n");
                   const a=document.createElement("a"); a.href="data:text/csv;charset=utf-8,\uFEFFBill,SĐT,Cửa hàng,Giải,Voucher,Trạng thái,Thời gian\n"+rows; a.download=`spins_${date}.csv`; a.click();
                 }} style={{padding:"6px 12px",background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,color:"#065f46",cursor:"pointer",fontSize:12,fontWeight:700}}>↓ CSV</button>
                 <button onClick={()=>{
+                  const data=filterPrize==="all"?spins:spins.filter(s=>filterPrize==="30"?s.prize_name&&s.prize_name.includes("30"):filterPrize==="15"?s.prize_name&&s.prize_name.includes("15"):s.prize_type==="viral");
                   const hdr=`<tr><th>Bill</th><th>SĐT</th><th>Cửa hàng</th><th>Giải</th><th>Voucher</th><th>Trạng thái</th><th>Thời gian</th></tr>`;
-                  const body=spins.map(s=>`<tr><td>${s.bill_code}</td><td>${s.phone}</td><td>${s.store_name||""}</td><td>${s.prize_name||""}</td><td>${s.voucher_code||""}</td><td>${s.is_valid?"valid":"invalid"}</td><td>${s.spun_at||""}</td></tr>`).join("");
+                  const body=data.map(s=>`<tr><td>${s.bill_code}</td><td>${s.phone}</td><td>${s.store_name||""}</td><td>${s.prize_name||""}</td><td>${s.voucher_code||""}</td><td>${s.is_valid?"valid":"invalid"}</td><td>${s.spun_at||""}</td></tr>`).join("");
                   const html=`<html><head><meta charset="UTF-8"></head><body><table>${hdr}${body}</table></body></html>`;
                   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\uFEFF"+html],{type:"application/vnd.ms-excel;charset=utf-8"})); a.download=`spins_${date}.xls`; a.click();
                 }} style={{padding:"6px 12px",background:"#f0fdf4",border:"1px solid #a7f3d0",borderRadius:8,color:"#1b459c",cursor:"pointer",fontSize:12,fontWeight:700}}>↓ Excel</button>
               </div>
             </div>
-            <div style={{fontSize:12,color:"#9ca3af",marginBottom:8}}>Hiển thị {spins.length} kết quả{filterPhone?` · SĐT: ${filterPhone}`:""}{filterBill?` · Bill: ${filterBill}`:""}</div>
+            {(()=>{
+            const fSpins = filterPrize==="all" ? spins : spins.filter(s=> filterPrize==="30"?s.prize_name&&s.prize_name.includes("30") : filterPrize==="15"?s.prize_name&&s.prize_name.includes("15") : filterPrize==="viral"?s.prize_type==="viral" : true);
+            return (<>
+            <div style={{fontSize:12,color:"#9ca3af",marginBottom:8}}>Hiển thị {fSpins.length} kết quả{filterPrize!=="all"?` · Lọc giải: ${filterPrize==="30"?"30 ngày":filterPrize==="15"?"Topping":"Mất lượt"}`:""}{filterPhone?` · SĐT: ${filterPhone}`:""}{filterBill?` · Bill: ${filterBill}`:""}</div>
             <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap"}}>
-              {[["Tổng",spins.length,"#374151"],["Hợp lệ",spins.filter(s=>s.is_valid).length,"#10b981"],["Không HL",spins.filter(s=>!s.is_valid).length,"#ef4444"],["Ban",spins.filter(s=>s.shadow_ban_hit).length,"#e99849"]].map(([l,v,c])=>(
+              {[["Tổng",fSpins.length,"#374151"],["Hợp lệ",fSpins.filter(s=>s.is_valid).length,"#10b981"],["Không HL",fSpins.filter(s=>!s.is_valid).length,"#ef4444"],["Ban",fSpins.filter(s=>s.shadow_ban_hit).length,"#e99849"]].map(([l,v,c])=>(
                 <div key={l} style={{background:"#fff",borderRadius:10,padding:"10px 16px",border:"1px solid #e5e7eb",minWidth:80,textAlign:"center"}}>
                   <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
                   <div style={{fontSize:12,color:"#6b7280"}}>{l}</div>
@@ -1847,9 +1858,9 @@ function AdminPage({ onBack }) {
             </div>
             {/* ── BULK ACTIONS ── */}
             <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
-              <button onClick={()=>{if(spinSelected.size===spins.length&&spins.length>0)setSpinSelected(new Set());else setSpinSelected(new Set(spins.map(s=>s.id)));}}
+              <button onClick={()=>{if(spinSelected.size===fSpins.length&&fSpins.length>0)setSpinSelected(new Set());else setSpinSelected(new Set(fSpins.map(s=>s.id)));}}
                 style={{padding:"6px 14px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#374151",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                {spinSelected.size===spins.length&&spins.length>0?"☑ Bỏ chọn tất cả":`☐ Chọn tất cả (${spins.length})`}
+                {spinSelected.size===fSpins.length&&fSpins.length>0?"☑ Bỏ chọn tất cả":`☐ Chọn tất cả (${fSpins.length})`}
               </button>
               {spinSelected.size>0&&(
                 <>
@@ -1872,11 +1883,11 @@ function AdminPage({ onBack }) {
                   {["☐","Mã Bill","SĐT","Cửa hàng","Giải","Voucher","Trạng thái","Thời gian",""].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {spins.length===0 ? <tr><td colSpan={9} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
-                  : spins.map(s=>{
+                  {fSpins.length===0 ? <tr><td colSpan={9} style={{...td,textAlign:"center",color:"#9ca3af"}}>Không có dữ liệu</td></tr>
+                  : fSpins.map(s=>{
                     // Detect sequential bill pattern
                     const billMatch = s.bill_code?.match(/^([A-Z.]+?)(\d{3,})$/);
-                    const isSeq = billMatch && spins.some(o => o.id!==s.id && o.phone===s.phone && o.bill_code?.startsWith(billMatch[1]) && Math.abs(parseInt(o.bill_code.replace(billMatch[1],"")) - parseInt(billMatch[2]))===1);
+                    const isSeq = billMatch && fSpins.some(o => o.id!==s.id && o.phone===s.phone && o.bill_code?.startsWith(billMatch[1]) && Math.abs(parseInt(o.bill_code.replace(billMatch[1],"")) - parseInt(billMatch[2]))===1);
                     return (
                     <tr key={s.id} style={{background:spinSelected.has(s.id)?"#fef2f2":isSeq?"#fef9f0":s.is_valid?"#fff":"#fef2f2"}}>
                       <td style={td}><input type="checkbox" checked={spinSelected.has(s.id)} onChange={e=>{const ns=new Set(spinSelected);e.target.checked?ns.add(s.id):ns.delete(s.id);setSpinSelected(ns);}}/></td>
@@ -1896,12 +1907,13 @@ function AdminPage({ onBack }) {
                 </tbody>
               </table>
             </div>
+          </>)})()}
           </div>
         )}
 
         {/* ── ĐỐI CHIẾU ── */}
         {tab==="reconcile"&&(()=>{
-          const validSpins = spins.filter(s=>s.is_valid);
+          const fValidSpins = (filterPrize==="all" ? spins : spins.filter(s=> filterPrize==="30"?s.prize_name&&s.prize_name.includes("30") : filterPrize==="15"?s.prize_name&&s.prize_name.includes("15") : filterPrize==="viral"?s.prize_type==="viral" : true)).filter(s=>s.is_valid);
           return (
           <div>
             <h3 style={{fontSize:16,fontWeight:900,marginBottom:8}}>🔍 Đối chiếu bill</h3>
@@ -1914,15 +1926,21 @@ function AdminPage({ onBack }) {
                 style={{...inp,width:140,padding:"6px 10px",fontSize:13}}/>
               <input value={filterBill} onChange={e=>setFilterBill(e.target.value)} placeholder="Mã bill..." onKeyDown={e=>e.key==="Enter"&&searchSpins()}
                 style={{...inp,width:150,padding:"6px 10px",fontSize:13}}/>
+              <select value={filterPrize} onChange={e=>{setFilterPrize(e.target.value);}} style={{...inp,padding:"6px 10px",fontSize:13,width:150}}>
+                <option value="all">Tất cả giải</option>
+                <option value="30">🏆 Voucher 30 ngày</option>
+                <option value="15">🎫 15 phần topping</option>
+                <option value="viral">❌ Mất lượt</option>
+              </select>
               <button onClick={searchSpins} style={{padding:"6px 14px",background:"#1b459c",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:700}}>Tìm</button>
-              {(filterPhone||filterBill)&&<button onClick={()=>{setFilterPhone("");setFilterBill("");setFilterValid("all");}} style={{padding:"6px 12px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#6b7280",cursor:"pointer",fontSize:12}}>✕ Xóa lọc</button>}
+              {(filterPhone||filterBill||filterPrize!=="all")&&<button onClick={()=>{setFilterPhone("");setFilterBill("");setFilterValid("all");setFilterPrize("all");}} style={{padding:"6px 12px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#6b7280",cursor:"pointer",fontSize:12}}>✕ Xóa lọc</button>}
             </div>
 
             {/* ── ACTIONS ── */}
             <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-              <button onClick={()=>{if(reconSelected.size===validSpins.length)setReconSelected(new Set());else setReconSelected(new Set(validSpins.map(s=>s.bill_code)));}}
+              <button onClick={()=>{if(reconSelected.size===fValidSpins.length)setReconSelected(new Set());else setReconSelected(new Set(fValidSpins.map(s=>s.bill_code)));}}
                 style={{padding:"6px 14px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,color:"#374151",cursor:"pointer",fontSize:12,fontWeight:700}}>
-                {reconSelected.size===validSpins.length&&validSpins.length>0?"☑ Bỏ chọn tất cả":`☐ Chọn tất cả (${validSpins.length})`}
+                {reconSelected.size===fValidSpins.length&&fValidSpins.length>0?"☑ Bỏ chọn tất cả":`☐ Chọn tất cả (${fValidSpins.length})`}
               </button>
               {reconSelected.size>0&&(
                 <>
@@ -1935,7 +1953,7 @@ function AdminPage({ onBack }) {
                   </button>
                 </>
               )}
-              <div style={{fontSize:12,color:"#9ca3af",marginLeft:"auto"}}>{validSpins.length} bill hợp lệ{filterPhone?` · SĐT: ${filterPhone}`:""}</div>
+              <div style={{fontSize:12,color:"#9ca3af",marginLeft:"auto"}}>{fValidSpins.length} bill hợp lệ{filterPhone?` · SĐT: ${filterPhone}`:""}</div>
             </div>
 
             <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e5e7eb"}}>
@@ -1944,8 +1962,8 @@ function AdminPage({ onBack }) {
                   {["☐","Bill","SĐT","Cửa hàng","Giải","Voucher","Thời gian"].map(h=><th key={h} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {validSpins.length===0 ? <tr><td colSpan={7} style={{...td,textAlign:"center",color:"#9ca3af"}}>{filterPhone||filterBill?"Không tìm thấy — thử filter khác":"Không có dữ liệu"}</td></tr>
-                  : validSpins.map(s=>(
+                  {fValidSpins.length===0 ? <tr><td colSpan={7} style={{...td,textAlign:"center",color:"#9ca3af"}}>{filterPhone||filterBill?"Không tìm thấy — thử filter khác":"Không có dữ liệu"}</td></tr>
+                  : fValidSpins.map(s=>(
                     <tr key={s.id} style={{background:reconSelected.has(s.bill_code)?"#fef2f2":"#fff"}}>
                       <td style={td}><input type="checkbox" checked={reconSelected.has(s.bill_code)} onChange={e=>{const ns=new Set(reconSelected);e.target.checked?ns.add(s.bill_code):ns.delete(s.bill_code);setReconSelected(ns);}}/></td>
                       <td style={{...td,fontFamily:"monospace",fontWeight:700}}>{s.bill_code}</td>
