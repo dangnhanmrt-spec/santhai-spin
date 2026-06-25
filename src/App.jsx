@@ -578,7 +578,7 @@ function timeAgo(dateStr) {
 }
 
 /* ─── CUSTOMER PAGE ─── */
-function CustomerPage({ onAdmin }) {
+function CustomerPage() {
   const [prizes,   setPrizes]   = useState([]);
   const [stats,    setStats]    = useState([]);
   const [settings, setSettings] = useState({
@@ -689,16 +689,13 @@ function CustomerPage({ onAdmin }) {
   return (
     <div style={{minHeight:"100vh",background:bgColor}}>
       <style>{G}</style>
-      <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:isMobile?"14px 18px":"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{flex:1}}>
+      <div style={{background:"linear-gradient(135deg,#e99849,#d4822a)",padding:isMobile?"14px 18px":"18px 24px"}}>
           <div style={{fontSize:isMobile?20:24,fontWeight:900,color:"#fff",fontFamily:"'Nunito',sans-serif",letterSpacing:1}}>
             {settings.event_name||"SanThai"}
           </div>
-          <div style={{fontSize:isMobile?12:13,color:"rgba(255,255,255,.85)",fontWeight:600}}>
+          <div style={{fontSize:isMobile?12:13,color:"rgba(255,255,255,.85)",fontWeight:600,marginTop:4}}>
             {settings.event_subtitle||"Vòng Quay May Mắn"}
           </div>
-        </div>
-        <div onClick={onAdmin} style={{width:40,height:40,cursor:"default",userSelect:"none"}}></div>
       </div>
 
       <div style={{display:"flex",flexDirection:isMobile?"column":"row",minHeight:isMobile?"auto":"calc(100vh - 80px - 60px)"}}>
@@ -2255,5 +2252,5 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, [admin]);
   if (admin) return <AdminPage onBack={() => { window.location.hash = ""; setAdmin(false); }}/>;
-  return <CustomerPage onAdmin={() => { window.location.hash = "#admin"; setAdmin(true); }}/>;
+  return <CustomerPage/>;
 }
