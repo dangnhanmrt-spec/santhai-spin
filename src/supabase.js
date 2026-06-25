@@ -204,7 +204,7 @@ export async function loadBlacklist() {
 }
 
 export async function loadVouchers() {
-  return get("spin_vouchers", "select=prize_id,prize_name,status&limit=10000");
+  return get("spin_vouchers", "select=prize_id,prize_name,status&limit=50000");
 }
 
 export async function adminInvalidate(bills) {
@@ -238,7 +238,7 @@ export async function updateSpecialStatus(id, status, note="") {
 // ─── VOUCHER DETAIL ───
 export async function loadPrizeVouchers(prizeId, status = null) {
   const f = status ? `&status=eq.${status}` : "";
-  return get("spin_vouchers", `prize_id=eq.${prizeId}&order=created_at.desc&limit=500${f}`);
+  return get("spin_vouchers", `prize_id=eq.${prizeId}&order=created_at.desc&limit=5000${f}`);
 }
 
 export async function deleteVoucher(id) {
