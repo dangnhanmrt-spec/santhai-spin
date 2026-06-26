@@ -758,7 +758,7 @@ function CustomerPage() {
                 <span>🏪</span><span style={{fontSize:13,color:"#059669",fontWeight:700}}>{detectStore(bill).name}</span>
               </div>
             ) : bill.length>=2 ? (
-              <div style={{fontSize:12,color:"#e99849",marginTop:4}}>⚠ Không nhận ra mã CH — vẫn có thể quay</div>
+              <div style={{fontSize:12,color:"#e99849",marginTop:4}}>⚠ Cần nhập đúng số HĐ để có thể quay</div>
             ) : null}
           </div>
           {err&&<div style={{background:"#fef2f2",border:"2px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#dc2626"}}>{err}</div>}
