@@ -654,6 +654,7 @@ function CustomerPage() {
     if (effectiveSpins >= effectiveBlock) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
     if (effectiveSpins >= warnAt) setErr(settings.rate_warn_message || "⚠️ Lưu ý: SĐT này đã quay nhiều lượt — sẽ được kiểm tra kỹ.");
     const store=detectStore(b);
+    if(!store.name){ setLoading(false); return setErr("⚠️ Mã bill không hợp lệ. Vui lòng nhập đúng mã trên hóa đơn."); }
     const res=await doSpin(b,p,store.id||null,store.name||null);
     setLoading(false);
     if(!res||res.error==="network") return setErr("Không kết nối được. Kiểm tra mạng.");
@@ -730,7 +731,7 @@ function CustomerPage() {
         {/* LEFT: Form */}
         <div style={{flex:isMobile?"none":"1 1 50%",padding:isMobile?"20px 16px":"28px 24px",background:"rgba(255,255,255,.95)",borderRight:isMobile?"none":"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,overflow:"auto"}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
-            ⚠️ Mã bill sẽ được đối chiếu tự động liên tục. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
+            ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
           {settings.description&&(
             <div>
