@@ -731,7 +731,7 @@ function CustomerPage() {
         {/* LEFT: Form */}
         <div style={{flex:isMobile?"none":"1 1 50%",padding:isMobile?"20px 16px":"28px 24px",background:"rgba(255,255,255,.95)",borderRight:isMobile?"none":"1px solid #f0e6d3",display:"flex",flexDirection:"column",gap:16,overflow:"auto"}}>
           <div style={{background:"#FFF8EE",borderRadius:10,padding:"10px 14px",borderLeft:"4px solid #e99849",fontSize:13,color:"#92400e",lineHeight:1.6}}>
-            ⚠️ Mã bill sẽ được đối chiếu tự động liên tục. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
+            ⚠️ Mã bill sẽ được đối chiếu POS cuối ngày. Dùng mã không hợp lệ có thể bị hạn chế tham gia.
           </div>
           {settings.description&&(
             <div>
@@ -758,7 +758,7 @@ function CustomerPage() {
                 <span>🏪</span><span style={{fontSize:13,color:"#059669",fontWeight:700}}>{detectStore(bill).name}</span>
               </div>
             ) : bill.length>=2 ? (
-              <div style={{fontSize:12,color:"#e99849",marginTop:4}}>⚠ Cần nhập đúng số HĐ để có thể quay</div>
+              <div style={{fontSize:12,color:"#e99849",marginTop:4}}>⚠ Không nhận ra mã CH — vẫn có thể quay</div>
             ) : null}
           </div>
           {err&&<div style={{background:"#fef2f2",border:"2px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:14,color:"#dc2626"}}>{err}</div>}
@@ -856,19 +856,18 @@ function CustomerPage() {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:14}}>
               <thead>
                 <tr style={{background:"#1b459c"}}>
-                  {["#","Cửa hàng","Lượt quay","30 ngày","Topping"].map(h=>(
+                  {["#","Cửa hàng","30 ngày","Topping"].map(h=>(
                     <th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:13,fontWeight:600,color:"#FFFFFF",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {leaderboard.rows.length===0 ? (
-                  <tr><td colSpan={5} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
+                  <tr><td colSpan={4} style={{padding:24,textAlign:"center",color:"#a8a29e",fontSize:14}}>Chưa có dữ liệu — event chưa bắt đầu</td></tr>
                 ) : leaderboard.rows.map((s,i)=>(
                   <tr key={i} style={{borderTop:"1px solid #e8d5b7",background:i%2===0?"#FFFFFF":"#FFF8EE"}}>
                     <td style={{padding:"11px 14px",fontWeight:900,color:i<3?"#e99849":"#78716c",fontSize:16}}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</td>
                     <td style={{padding:"11px 14px",fontWeight:700,color:"#1c1917"}}>{s.name}</td>
-                    <td style={{padding:"11px 14px",color:"#e99849",fontWeight:800,fontSize:16}}>{s.total}</td>
                     <td style={{padding:"11px 14px"}}>{s.v30>0?<span style={{background:"#fef2f2",border:"1px solid #ef4444",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#dc2626"}}>🏆 {s.v30}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
                     <td style={{padding:"11px 14px"}}>{s.v15>0?<span style={{background:"#fef9c3",border:"1px solid #eab308",borderRadius:20,padding:"2px 8px",fontSize:13,fontWeight:700,color:"#a16207"}}>🎫 {s.v15}</span>:<span style={{color:"#a8a29e"}}>—</span>}</td>
                   </tr>
