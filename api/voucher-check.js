@@ -9,6 +9,7 @@ const HEADERS = {
   apikey: SUPA_KEY,
   Authorization: `Bearer ${SUPA_KEY}`,
   "Content-Type": "application/json",
+  "X-Voucher-Callback-Token": process.env.VOUCHER_CALLBACK_TOKEN || "",
 };
 
 // ─── Helper: gọi Supabase REST ───
@@ -76,9 +77,9 @@ export default async function handler(req, res) {
 
     // ── 2. Kiểm tra đây có phải mega voucher không ──
     // Nếu mã không tồn tại trong mega_vouchers → trả code 0 để iPOS check tiếp các rule khác
-    const vouchers = await supaGet("mega_vouchers", `code=eq.${voucherCode}&limit=1`);
-    if (!vouchers.length) {
-      return res.json(iposResponse(body, 0, 0, "Mã voucher không tồn tại"));
+    // Voucher existence, phone and balance are validated atomically in the RPC.
+    if (!process.env.VOUCHER_CALLBACK_TOKEN) {
+      return res.status(503).json(iposResponse(body, 0, 0, "Chưa kết nối được hệ thống voucher."));
     }
 
     // ── 3. Load danh sách mã món tính là "ly" ──

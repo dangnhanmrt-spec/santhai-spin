@@ -3,7 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 
 const SUPA_URL = "https://stxymyjwxdtfxkvmsgmz.supabase.co";
 const KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0eHlteWp3eGR0Znhrdm1zZ216Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Nzg4ODIsImV4cCI6MjA5MjQ1NDg4Mn0.dxF-84q5CSoT21b__zq8XgUfyRuSAwIov9PL269WWm4";
-const H    = { apikey:KEY, Authorization:`Bearer ${KEY}`, "Content-Type":"application/json" };
+async function requestHeaders() {
+  const { data: { session }, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  return { apikey: KEY, Authorization: `Bearer ${session?.access_token || KEY}`, "Content-Type": "application/json" };
+}
 
 /* ═══ SUPABASE AUTH CLIENT ═══ */
 export const supabaseClient = createClient(SUPA_URL, KEY);
@@ -13,7 +17,7 @@ export async function checkEmailAccess(email) {
   try {
     const r = await fetch(
       `${SUPA_URL}/rest/v1/allowed_emails?email=eq.${encodeURIComponent(email)}&limit=1`,
-      { headers: H }
+      { headers: await requestHeaders() }
     );
     if (!r.ok) return null;
     const rows = await r.json();
@@ -26,7 +30,7 @@ export async function checkEmailAccess(email) {
 /* ═══ RAW FETCH HELPERS ═══ */
 async function rpc(fn, params) {
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, { method:"POST", headers:H, body:JSON.stringify(params) });
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/${fn}`, { method:"POST", headers: await requestHeaders(), body:JSON.stringify(params) });
     if (!r.ok) {
       const t = await r.text();
       if (t.includes("does not exist") || r.status===404)
@@ -39,7 +43,7 @@ async function rpc(fn, params) {
 
 async function get(table, params="") {
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { headers:H });
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { headers: await requestHeaders() });
     if (!r.ok) return [];
     const d = await r.json();
     return Array.isArray(d) ? d : [];
@@ -49,7 +53,7 @@ async function get(table, params="") {
 async function post(table, body, prefer="return=minimal") {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
-      method:"POST", headers:{...H,Prefer:prefer}, body:JSON.stringify(body)
+      method:"POST", headers:{...(await requestHeaders()),Prefer:prefer}, body:JSON.stringify(body)
     });
     return r.ok;
   } catch { return false; }
@@ -58,7 +62,7 @@ async function post(table, body, prefer="return=minimal") {
 async function patch(table, match, body) {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${match}`, {
-      method:"PATCH", headers:H, body:JSON.stringify(body)
+      method:"PATCH", headers: await requestHeaders(), body:JSON.stringify(body)
     });
     return r.ok;
   } catch { return false; }
@@ -66,7 +70,7 @@ async function patch(table, match, body) {
 
 async function remove(table, match) {
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${match}`, { method:"DELETE", headers:H });
+    const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${match}`, { method:"DELETE", headers: await requestHeaders() });
     return r.ok;
   } catch { return false; }
 }
@@ -105,12 +109,12 @@ export async function savePrize(prize) {
     let r;
     if (id) {
       r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?id=eq.${id}`, {
-        method: "PATCH", headers: H, body: JSON.stringify(data),
+        method: "PATCH", headers: await requestHeaders(), body: JSON.stringify(data),
       });
     } else {
       r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
         method: "POST",
-        headers: { ...H, Prefer: "return=representation" },
+        headers: { ...(await requestHeaders()), Prefer: "return=representation" },
         body: JSON.stringify(data),
       });
     }
@@ -128,7 +132,7 @@ export async function savePrize(prize) {
 
 export async function testConnection() {
   try {
-    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?limit=1`, { headers: H });
+    const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes?limit=1`, { headers: await requestHeaders() });
     if (r.status === 404 || r.status === 400) return { ok: false, error: "table_missing" };
     if (!r.ok) return { ok: false, error: `http_${r.status}` };
     return { ok: true };
@@ -156,7 +160,7 @@ export async function resetDefaultPrizes() {
   ];
   const r = await fetch(`${SUPA_URL}/rest/v1/spin_prizes`, {
     method: "POST",
-    headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
+    headers: { ...(await requestHeaders()), Prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(defaults),
   });
   return r.ok;
@@ -216,7 +220,7 @@ export async function importVouchers(codes, prizeId, prizeName) {
   for (let i=0; i<rows.length; i+=100) {
     await fetch(`${SUPA_URL}/rest/v1/spin_vouchers`, {
       method:"POST",
-      headers:{...H, Prefer:"resolution=ignore-duplicates"},
+      headers:{...(await requestHeaders()), Prefer:"resolution=ignore-duplicates"},
       body:JSON.stringify(rows.slice(i,i+100)),
     });
   }
@@ -252,13 +256,9 @@ export async function bulkDeleteVouchers(ids) {
 
 // ─── RATE LIMIT (chống spam) ───
 export async function checkSpinRateLimit(phone) {
-  const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10); // Vietnam UTC+7
-  const { start, end } = dayRange(today);
-  const clean = phone.replace(/\D/g, "");
-  const rows = await get("spin_records",
-    `phone=eq.${clean}&spun_at=gte.${encodeURIComponent(start)}&spun_at=lte.${encodeURIComponent(end)}&select=id&limit=100`
-  );
-  return rows.length;
+  const result = await rpc("spin_phone_status", { p_phone: phone.replace(/\D/g, "") });
+  if (result?.error) throw new Error(result.message || "Chưa kiểm tra được lượt quay.");
+  return Number(result?.today_spins || 0);
 }
 
 // ─── LOOKUP (tra cứu voucher theo SĐT) ───
@@ -293,7 +293,7 @@ export async function addAllowedEmail(email, role) {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/allowed_emails`, {
       method: "POST",
-      headers: { ...H, Prefer: "return=representation" },
+      headers: { ...(await requestHeaders()), Prefer: "return=representation" },
       body: JSON.stringify({ email: email.trim().toLowerCase(), role }),
     });
     if (!r.ok) {
@@ -320,7 +320,7 @@ export async function saveSetting(key, value) {
   try {
     const r = await fetch(`${SUPA_URL}/rest/v1/rpc/upsert_setting`, {
       method: "POST",
-      headers: H,
+      headers: await requestHeaders(),
       body: JSON.stringify({ p_key: key, p_value: String(value) }),
     });
     return r.ok;
@@ -348,10 +348,10 @@ export async function removePhoneAllowance(phone) {
 }
 
 export async function checkPhoneAllowance(phone) {
-  const clean = phone.replace(/\D/g,"");
-  const rows = await get("spin_settings", `key=eq.allow_${clean}&limit=1`);
-  if (rows.length === 0) return null;
-  return { phone: clean, extra_spins: parseInt(rows[0].value) || 0 };
+  const clean = phone.replace(/\D/g, "");
+  const result = await rpc("spin_phone_status", { p_phone: clean });
+  if (result?.error) throw new Error(result.message || "Chưa kiểm tra được lượt quay.");
+  return result?.extra_spins == null ? null : { phone: clean, extra_spins: result.extra_spins };
 }
 
 // ─── BILL ARCHIVE (lưu trữ bill hàng ngày) ───

@@ -647,8 +647,13 @@ function CustomerPage() {
     // Rate limit: custom thresholds from settings
     const warnAt = parseInt(settings.rate_warn_threshold) || 5;
     const blockAt = parseInt(settings.rate_block_threshold) || 10;
-    const todaySpins = await checkSpinRateLimit(p);
-    const allowance = await checkPhoneAllowance(p);
+    let todaySpins, allowance;
+    try {
+      [todaySpins, allowance] = await Promise.all([checkSpinRateLimit(p), checkPhoneAllowance(p)]);
+    } catch {
+      setLoading(false);
+      return setErr("Chưa kiểm tra được lượt quay. Vui lòng thử lại.");
+    }
     const effectiveBlock = blockAt + (allowance?.extra_spins || 0);
     const effectiveSpins = Math.max(todaySpins, billQueue.length) + 1; // đếm cả queue client-side chống lách
     if (effectiveSpins >= effectiveBlock) { setLoading(false); return setErr(settings.rate_block_message || "⚠️ Số điện thoại này đã đạt giới hạn lượt quay trong ngày. Vui lòng quay lại ngày mai."); }
