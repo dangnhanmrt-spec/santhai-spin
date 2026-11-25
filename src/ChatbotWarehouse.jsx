@@ -38,7 +38,8 @@ export default function ChatbotWarehouse(){
    <label>Kho voucher <select aria-label="Kho voucher" style={{...input,marginLeft:10}} value={poolId} onChange={e=>{setPoolId(e.target.value);setPage(0);setText('');setMessage('');}}>{pools.map(p=><option key={p.id} value={p.id}>{p.name} · {p.is_test?'TEST':'THẬT'}</option>)}</select></label>
    <button style={button} disabled={loading||busy} onClick={()=>load()}>Làm mới</button>
   </div>
-  {pool?.is_test&&<p style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:12}}>Kho thử nghiệm — mã chỉ dùng kiểm tra chatbot, không có giá trị đổi thưởng tại cửa hàng. Chưa kết nối flow Botcake.</p>}
+  {pool?.is_test&&<p style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:12}}>Kho thử nghiệm — mã chỉ dùng kiểm tra chatbot, không có giá trị đổi thưởng tại cửa hàng.</p>}
+  {pool&&<p style={{color:'#57534e'}}>Chiến dịch: <code>{pool.campaign}</code> · Loại giải: <code>{pool.prize_code}</code> · {pool.enabled?'Đang cho phép cấp mã':'Đang tắt cấp mã'}</p>}
   {!poolId&&!error&&<p>Chưa có kho hoặc tài khoản không có quyền quản lý kho chatbot.</p>}
   {error&&<p role="alert" style={{color:'#b91c1c',background:'#fef2f2',padding:12}}>{error}</p>}
   {message&&<p role="status" style={{color:'#166534',background:'#f0fdf4',padding:12}}>{message}</p>}

@@ -11,3 +11,14 @@ test('bind customer and event, return code and replay flag',async()=>{const h=cr
 test('empty stock clears code so previous value is not reused',async()=>{const h=createHandler({config,rpc:async()=>({status:'out_of_stock'})});assert.deepEqual(await (await h(request())).json(),{voucher_code:'',status:'out_of_stock',is_test:true});});
 test('database failure never leaks details or stale code',async()=>{const h=createHandler({config,rpc:async()=>{throw Error('private details');}});const r=await h(request());assert.equal(r.status,503);assert.deepEqual(await r.json(),{voucher_code:'',status:'temporarily_unavailable'});});
 test('reject oversized input',async()=>{const h=createHandler({config,rpc:async()=>assert.fail('unexpected call')});assert.equal((await h(request({...body,note:'x'.repeat(5000)}))).status,413);});
+
+test('requests without event allocate a new internal event each time',async()=>{const ids=[];const h=createHandler({config,rpc:async p=>{ids.push(p.p_event_id);return {status:'success',voucher_code:'ABCDE'};}});const {event_id,...data}=body;await h(request(data));await h(request(data));assert.equal(ids.length,2);assert.notEqual(ids[0],ids[1]);});
+
+test('routes every prize to its own test/live pool and rejects unknown prizes',async()=>{
+ const prizes=['TP10k','x2TP','M2T1','Upsiz','15%'];
+ const pools=['TEST','LIVE'].flatMap(c=>prizes.map(p=>({campaignId:c,prizeCode:p,poolId:c+':'+p,isTest:c==='TEST'})));
+ let calls=0;const h=createHandler({config:{tokenHash:config.tokenHash,pools},rpc:async p=>{calls++;return {status:'success',voucher_code:'ABCDE',pool:p.p_pool_id};}});
+ for(const pool of pools){const check=createHandler({config:{tokenHash:config.tokenHash,pools},rpc:async p=>{assert.equal(p.p_pool_id,pool.poolId);return {status:'success',voucher_code:'ABCDE'};}});const result=await(await check(request({...body,campaign_id:pool.campaignId,prize_code:pool.prizeCode}))).json();assert.equal(result.is_test,pool.isTest);assert.equal(result.prize_code,pool.prizeCode);}
+ for(const prize of ['TRUOT','__proto__','missing'])assert.equal((await h(request({...body,prize_code:prize}))).status,400);
+ assert.equal(calls,0);
+});

@@ -17,14 +17,17 @@ export function createHandler({config,rpc}){
    const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}body=JSON.parse(new TextDecoder().decode(bytes));
   }catch{return json(400,{status:'invalid_json'});}
   if(!body||typeof body!=='object'||Array.isArray(body))return json(400,{status:'invalid_request'});
-  if(body.campaign_id!==config.campaignId||body.prize_code!==config.prizeCode)return json(400,{status:'invalid_campaign'});
+  const pool=(config.pools??[{...config,isTest:true}]).find(p=>p.campaignId===body.campaign_id&&p.prizeCode===body.prize_code);
+  if(!pool)return json(400,{status:'invalid_campaign'});
   if(typeof body.customer_id!=='string'||!/^\d{5,30}$/.test(body.customer_id))return json(400,{status:'invalid_customer'});
-  if(typeof body.event_id!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(body.event_id))return json(400,{status:'missing_or_invalid_event'});
+  if(body.event_id!==undefined && (typeof body.event_id!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(body.event_id)))return json(400,{status:'invalid_event'});
+  const eventId=body.event_id??crypto.randomUUID();
   try{
-   // Bind customer to event namespace, so per-customer counters cannot collide.
-   const result=await rpc({p_pool_id:config.poolId,p_customer_id:body.customer_id,p_event_id:`${body.customer_id}:${body.event_id}`});
-   if(result?.status==='success'&&typeof result.voucher_code==='string'&&/^[A-Z0-9_-]{5,64}$/.test(result.voucher_code))return json(200,{status:'success',voucher_code:result.voucher_code,replayed:result.replayed===true,is_test:true,prize_code:config.prizeCode});
-   if(['out_of_stock','disabled','expired'].includes(result?.status))return json(200,{status:result.status,is_test:true});
+   // No event supplied: each invocation allocates a fresh code, as requested.
+   // An optional explicit event remains available for clients that support retries.
+   const result=await rpc({p_pool_id:pool.poolId,p_customer_id:body.customer_id,p_event_id:`${body.customer_id}:${eventId}`});
+   if(result?.status==='success'&&typeof result.voucher_code==='string'&&/^[A-Z0-9_-]{5,64}$/.test(result.voucher_code))return json(200,{status:'success',voucher_code:result.voucher_code,replayed:result.replayed===true,is_test:pool.isTest,prize_code:pool.prizeCode});
+   if(['out_of_stock','disabled','expired'].includes(result?.status))return json(200,{status:result.status,is_test:pool.isTest});
    return json(502,{status:'upstream_error'});
   }catch{return json(503,{status:'temporarily_unavailable'});}
  };
