@@ -1,0 +1,1 @@
+export const config = {"tokenHash": "02bbacc545917d6c19f2816f858908d3419e5d8e59695835ab21c6998b63ac2f", "poolId": "e24bd6d8-9e83-4984-9b5b-35c78c22bb69", "campaignId": "BOTCAKE_TEST_20261126", "prizeCode": "TP10k"};
