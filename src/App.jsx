@@ -1,3 +1,4 @@
+import ChatbotWarehouse from "./ChatbotWarehouse";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   supabaseClient, checkEmailAccess,
@@ -1204,7 +1205,7 @@ function AdminPage({ onBack }) {
   const [userRole,     setUserRole]     = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
 
-  const [tab,     setTab]    = useState("settings");
+  const [tab,     setTab]    = useState(()=>window.location.hash.includes("chatbot")?"chatbot":"settings");
   const [loading, setLoading]= useState(false);
   const [dbStatus,setDbStatus]=useState(null);
 
@@ -1304,6 +1305,7 @@ function AdminPage({ onBack }) {
     {id:"reconcile", label:"🔍 Đối chiếu"},
     {id:"archive",   label:"📦 Lưu trữ bill"},
     {id:"vouchers",  label:"🎟 Vouchers"},
+    ...(userRole==="super_admin"?[{id:"chatbot",label:"🎫 Kho mã chatbot"}]:[]),
     {id:"vdetail",   label:"🔧 Chi tiết voucher"},
     {id:"test",      label:"🧪 Test Mode"},
     {id:"special",   label:"🏆 Giải đặc biệt"},
@@ -2082,6 +2084,7 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
+        {tab==="chatbot"&&userRole==="super_admin"&&<ChatbotWarehouse/>}
         {tab==="vdetail"&&<VoucherDetailPanel prizes={prizes}/>}
 
         {tab==="test"&&(
