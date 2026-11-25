@@ -1305,7 +1305,7 @@ function AdminPage({ onBack }) {
     {id:"reconcile", label:"🔍 Đối chiếu"},
     {id:"archive",   label:"📦 Lưu trữ bill"},
     {id:"vouchers",  label:"🎟 Vouchers"},
-    ...(userRole==="super_admin"?[{id:"chatbot",label:"🎫 Kho mã chatbot"}]:[]),
+    ...(user?.email?.toLowerCase()==="dangnhan.mrt@gmail.com"?[{id:"chatbot",label:"🎫 Kho mã chatbot"}]:[]),
     {id:"vdetail",   label:"🔧 Chi tiết voucher"},
     {id:"test",      label:"🧪 Test Mode"},
     {id:"special",   label:"🏆 Giải đặc biệt"},
@@ -2084,7 +2084,7 @@ function AdminPage({ onBack }) {
           </div>
         )}
 
-        {tab==="chatbot"&&userRole==="super_admin"&&<ChatbotWarehouse/>}
+        {tab==="chatbot"&&user?.email?.toLowerCase()==="dangnhan.mrt@gmail.com"&&<ChatbotWarehouse/>}
         {tab==="vdetail"&&<VoucherDetailPanel prizes={prizes}/>}
 
         {tab==="test"&&(
