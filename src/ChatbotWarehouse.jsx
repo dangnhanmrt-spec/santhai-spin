@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {supabaseClient as db} from './supabase';
+import StockOverview from './StockOverview';
 import {admin} from './VoucherAdmin';
 import {parseVoucherCodes} from './voucherImport';
 const box={background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:18};
@@ -9,6 +10,7 @@ const prizeNames={'TP10k':'Free topping','x2TP':'x2 topping','M2T1':'Mua 2 tặn
 const prizeOrder=Object.keys(prizeNames);
 const labels={available:'Chưa phát',issued:'Đã phát',redeemed:'Đã sử dụng',void:'Đã hủy'};
 export default function ChatbotWarehouse({role}){
+ const [overviewRefresh,setOverviewRefresh]=useState(0);
  const [rounds,setRounds]=useState([]),[roundId,setRoundId]=useState('');
  const canWrite=role==='owner'||role==='manager';
  const [pools,setPools]=useState([]),[poolId,setPoolId]=useState(''),[rows,setRows]=useState([]),[counts,setCounts]=useState({}),[text,setText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[filter,setFilter]=useState('all'),[page,setPage]=useState(0);
@@ -42,7 +44,7 @@ export default function ChatbotWarehouse({role}){
  async function importCodes(){setBusy(true);setError('');setMessage('');try{
   const codes=parseVoucherCodes(text);
   const {data,error}=await db.rpc('chatbot_import_codes',{p_pool_id:poolId,p_codes:codes});if(error)throw error;
-  setMessage(`Đã nhập ${data.inserted} mã mới · Bỏ qua ${data.duplicates} mã trùng.`);setText('');await load();
+  setMessage(`Đã nhập ${data.inserted} mã mới · Bỏ qua ${data.duplicates} mã trùng.`);setText('');setOverviewRefresh(x=>x+1);await load();
  }catch(e){setError(e.message);}finally{setBusy(false);}}
  async function download(){setBusy(true);setError('');try{
   const all=[];let offset=0;
@@ -51,17 +53,19 @@ export default function ChatbotWarehouse({role}){
  }catch(e){setError(e.message);}finally{setBusy(false);}}
  return <section style={{color:'#1c1917'}}>
   <h2 style={{margin:'0 0 8px'}}>Kho mã chatbot</h2><p style={{color:'#6b7280',marginTop:0}}>Nhập mã cho từng giải thưởng · Theo dõi mã chưa phát và lịch sử cấp mã</p>
+    <label style={{fontSize:14,color:'#57534e'}}>Chế độ <select aria-label="Chế độ kho" value={mode} disabled={busy} onChange={e=>switchScope(warehouse,e.target.value)} style={{...input,margin:'8px 0 8px 8px'}}><option value="live">Sử dụng thật</option><option value="test">Thử nghiệm</option></select></label>
   <label style={{display:'block',marginBottom:16,fontWeight:600}}>Đợt phát <select aria-label="Đợt phát" style={{...input,marginLeft:10}} disabled={busy} value={roundId} onChange={e=>{setRoundId(e.target.value);choosePool(pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup')&&p.prize_code===pool?.prize_code)?.id||pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup'))?.id||'');}}>{rounds.filter(r=>r.is_test===(mode==='test')).map(r=><option key={r.id} value={r.id}>{r.name} · {{draft:'Chuẩn bị',active:'Đang phát',closed:'Đã chốt'}[r.status]}</option>)}</select></label>
+  <StockOverview roundId={roundId} refreshKey={overviewRefresh}/>
   <div style={{...box,padding:0,overflow:'hidden'}}>
    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,padding:'0 18px',borderBottom:'1px solid #e5e7eb',flexWrap:'wrap'}}>
     <div role="tablist" aria-label="Loại kho" style={{display:'flex',gap:24}}>{[['main','Kho chính'],['backup','Kho backup']].map(([key,label])=><button key={key} role="tab" aria-selected={warehouse===key} aria-controls="warehouse-panel" id={`tab-${key}`} disabled={busy} onClick={()=>switchScope(key,mode)} style={{border:0,borderBottom:`3px solid ${warehouse===key?'#c96b24':'transparent'}`,background:'transparent',padding:'18px 2px 15px',fontSize:16,fontWeight:700,color:warehouse===key?'#a34e14':'#6b7280',cursor:'pointer'}}>{label}</button>)}</div>
-    <label style={{fontSize:14,color:'#57534e'}}>Chế độ <select aria-label="Chế độ kho" value={mode} disabled={busy} onChange={e=>switchScope(warehouse,e.target.value)} style={{...input,margin:'8px 0 8px 8px'}}><option value="live">Sử dụng thật</option><option value="test">Thử nghiệm</option></select></label>
+
    </div>
    <div id="warehouse-panel" role="tabpanel" aria-labelledby={`tab-${warehouse}`} style={{padding:18}}>
     <p style={{margin:'0 0 16px',color:'#57534e'}}>{warehouse==='main'?'Kho phát mã ưu tiên. Đóng vòng quay cho người mới khi 3/5 giải hết mã.':'Kho dự phòng cho từng giải. Chỉ phát khi kho chính cùng giải hết mã; không tính vào ngưỡng đóng vòng quay.'}</p>
     <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
      <label style={{fontWeight:600}}>Giải thưởng <select aria-label="Giải thưởng" style={{...input,marginLeft:10,minWidth:200}} disabled={busy} value={poolId} onChange={e=>choosePool(e.target.value)}>{visiblePools.map(p=><option key={p.id} value={p.id}>{prizeNames[p.prize_code]||p.name}</option>)}</select></label>
-     <button style={button} disabled={loading||busy||!poolId} onClick={()=>load()}>Làm mới</button>
+     <button style={button} disabled={loading||busy||!poolId} onClick={()=>{load();setOverviewRefresh(x=>x+1);}}>Làm mới</button>
      {pool&&<span style={{fontSize:13,color:pool.enabled?'#166534':'#991b1b'}}>{pool.enabled?'● Đang cho phép cấp mã':'● Đang tắt cấp mã'}</span>}
     </div>
     {warehouse==='backup'&&pool&&<p style={{fontSize:13,color:'#57534e',margin:'12px 0 0'}}>Kho chính tương ứng: <strong>{pairedPool?(prizeNames[pairedPool.prize_code]||pairedPool.name):'Chưa có kho ghép'}</strong></p>}
