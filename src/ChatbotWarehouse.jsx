@@ -8,6 +8,7 @@ const labels={available:'Chưa phát',issued:'Đã phát',redeemed:'Đã sử d�
 export default function ChatbotWarehouse(){
  const [pools,setPools]=useState([]),[poolId,setPoolId]=useState(''),[rows,setRows]=useState([]),[counts,setCounts]=useState({}),[text,setText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[filter,setFilter]=useState('all'),[page,setPage]=useState(0);
  const pool=pools.find(p=>p.id===poolId);
+ const pairedPool=pools.find(p=>pool?.backup_for?p.id===pool.backup_for:p.backup_for===pool?.id);
  useEffect(()=>{let alive=true;db.from('chatbot_voucher_pools').select('*').order('created_at',{ascending:false}).then(({data,error})=>{if(!alive)return;if(error)setError(error.message);else{setPools(data);setPoolId(data[0]?.id||'');}});return()=>{alive=false;};},[]);
  async function load(id=poolId){
   if(!id)return;setLoading(true);setError('');
@@ -38,6 +39,7 @@ export default function ChatbotWarehouse(){
    <label>Kho voucher <select aria-label="Kho voucher" style={{...input,marginLeft:10}} value={poolId} onChange={e=>{setPoolId(e.target.value);setPage(0);setText('');setMessage('');}}>{pools.map(p=><option key={p.id} value={p.id}>{p.name} · {p.is_test?'TEST':'THẬT'}</option>)}</select></label>
    <button style={button} disabled={loading||busy} onClick={()=>load()}>Làm mới</button>
   </div>
+  {pool&&<p style={{...box,background:'#f8fafc'}}><strong>{pool.backup_for?'Kho backup':'Kho chính'}</strong> · {pairedPool?`Ghép với: ${pairedPool.name}`:'Chưa có kho ghép'}<br/>{pool.backup_for?'Chỉ cấp khi kho chính cùng giải hết mã. Không tính vào điều kiện đóng vòng quay.':'Vòng quay đóng cho người mới khi 3/5 kho chính hết mã. Các lượt đã cấp vẫn nhận thưởng.'}</p>}
   {pool?.is_test&&<p style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:12}}>Kho thử nghiệm — mã chỉ dùng kiểm tra chatbot, không có giá trị đổi thưởng tại cửa hàng.</p>}
   {pool&&<p style={{color:'#57534e'}}>Chiến dịch: <code>{pool.campaign}</code> · Loại giải: <code>{pool.prize_code}</code> · {pool.enabled?'Đang cho phép cấp mã':'Đang tắt cấp mã'}</p>}
   {!poolId&&!error&&<p>Chưa có kho hoặc tài khoản không có quyền quản lý kho chatbot.</p>}

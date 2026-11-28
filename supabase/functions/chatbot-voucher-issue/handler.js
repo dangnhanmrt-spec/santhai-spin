@@ -1,6 +1,6 @@
 const json=(status,body)=>new Response(JSON.stringify({voucher_code:'',...body}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
 const hex=bytes=>Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
-export function createHandler({config,rpc}){
+export function createHandler({config,rpc,stockRpc}){
  return async function handler(req){
   if(req.method!=='POST')return json(405,{status:'method_not_allowed'});
   const token=(req.headers.get('authorization')||'').match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
@@ -17,6 +17,16 @@ export function createHandler({config,rpc}){
    const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}body=JSON.parse(new TextDecoder().decode(bytes));
   }catch{return json(400,{status:'invalid_json'});}
   if(!body||typeof body!=='object'||Array.isArray(body))return json(400,{status:'invalid_request'});
+  if(body.action==='check_stock'){
+   const pools=(config.pools??[]).filter(p=>p.campaignId===body.campaign_id);
+   if(pools.length!==5)return json(400,{status:'invalid_campaign',stock_gate:'CLOSED'});
+   try{
+    const result=await stockRpc({p_pool_ids:pools.map(p=>p.poolId)});
+    if(!result||!['OPEN','CLOSED'].includes(result.stock_gate))throw new Error('Invalid stock response');
+    return json(200,result);
+   }catch{return json(503,{status:'temporarily_unavailable',stock_gate:'CLOSED'});}
+  }
+  if(body.action!==undefined&&body.action!=='issue')return json(400,{status:'invalid_action'});
   const pool=(config.pools??[{...config,isTest:true}]).find(p=>p.campaignId===body.campaign_id&&p.prizeCode===body.prize_code);
   if(!pool)return json(400,{status:'invalid_campaign'});
   if(typeof body.customer_id!=='string'||!/^\d{5,30}$/.test(body.customer_id))return json(400,{status:'invalid_customer'});
@@ -26,7 +36,7 @@ export function createHandler({config,rpc}){
    // No event supplied: each invocation allocates a fresh code, as requested.
    // An optional explicit event remains available for clients that support retries.
    const result=await rpc({p_pool_id:pool.poolId,p_customer_id:body.customer_id,p_event_id:`${body.customer_id}:${eventId}`});
-   if(result?.status==='success'&&typeof result.voucher_code==='string'&&/^[A-Z0-9_-]{5,64}$/.test(result.voucher_code))return json(200,{status:'success',voucher_code:result.voucher_code,replayed:result.replayed===true,is_test:pool.isTest,prize_code:pool.prizeCode});
+   if(result?.status==='success'&&typeof result.voucher_code==='string'&&/^[A-Z0-9_-]{5,64}$/.test(result.voucher_code))return json(200,{status:'success',voucher_code:result.voucher_code,replayed:result.replayed===true,source:result.source??'main',is_test:pool.isTest,prize_code:pool.prizeCode});
    if(['out_of_stock','disabled','expired'].includes(result?.status))return json(200,{status:result.status,is_test:pool.isTest});
    return json(502,{status:'upstream_error'});
   }catch{return json(503,{status:'temporarily_unavailable'});}
