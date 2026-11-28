@@ -22,7 +22,7 @@ reset role;
 -- Simulate the fixture's completed round, including one issued voucher.
 update public.chatbot_voucher_pools set enabled=true where round_id=current_setting('test.source')::uuid;
 select public.chatbot_issue_code(current_setting('test.pool')::uuid,'123456789','admin-fixture-event');
-update public.chatbot_rounds set status='closed' where is_test=true and status='active';
+update public.chatbot_rounds set status='closed' where is_test=false and status='active';
 set local role authenticated;
 select public.chatbot_admin('activate',jsonb_build_object('round_id',current_setting('test.source')));
 select public.chatbot_admin('close',jsonb_build_object('round_id',current_setting('test.source')));

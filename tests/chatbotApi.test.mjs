@@ -45,3 +45,11 @@ test('campaign resolver failure fails closed without allocating',async()=>{
  const h=createHandler({config,resolveCampaign:async()=>{throw Error('private');},rpc:async()=>assert.fail('must not issue')});
  const r=await h(request({action:'check_stock',campaign_id:'ROUND_'+'b'.repeat(32)}));assert.equal(r.status,503);assert.equal((await r.json()).stock_gate,'CLOSED');
 });
+
+test('unified production and legacy alias address the identical five pools',async()=>{
+ const {config:live}=await import('../supabase/functions/chatbot-voucher-issue/config.js');
+ const current=live.pools.filter(p=>p.campaignId==='BOTCAKE_LIVE');
+ const legacy=live.pools.filter(p=>p.campaignId==='BOTCAKE_TEST_20261126');
+ assert.equal(current.length,5);assert.equal(legacy.length,5);
+ for(const p of current){assert.equal(p.isTest,false);assert.equal(legacy.find(x=>x.prizeCode===p.prizeCode).poolId,p.poolId);}
+});

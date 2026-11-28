@@ -70,7 +70,7 @@ begin
   return result;
  elsif p_action='create' then
   camp:='ROUND_'||replace(gen_random_uuid()::text,'-','');
-  insert into public.chatbot_rounds(name,campaign,is_test,status) values(btrim(p_data->>'name'),camp,(p_data->>'is_test')::boolean,'draft') returning * into r;
+  insert into public.chatbot_rounds(name,campaign,is_test,status) values(btrim(p_data->>'name'),camp,false,'draft') returning * into r;
   foreach prize in array array['TP10k','x2TP','M2T1','Upsiz','15%'] loop
    insert into public.chatbot_voucher_pools(campaign,prize_code,name,is_test,enabled,round_id,expires_at) values(camp,prize,prize,r.is_test,false,r.id,nullif(p_data->>'expires_at','')::timestamptz) returning id into main_id;
    insert into public.chatbot_voucher_pools(campaign,prize_code,name,is_test,enabled,round_id,backup_for,expires_at) values(camp||'_BACKUP',prize,prize||' — Backup',r.is_test,false,r.id,main_id,nullif(p_data->>'expires_at','')::timestamptz);

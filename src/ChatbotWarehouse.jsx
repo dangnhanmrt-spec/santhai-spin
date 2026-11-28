@@ -15,20 +15,18 @@ export default function ChatbotWarehouse({role}){
  const [rounds,setRounds]=useState([]),[roundId,setRoundId]=useState('');
  const canWrite=role==='owner'||role==='manager';
  const [pools,setPools]=useState([]),[poolId,setPoolId]=useState(''),[rows,setRows]=useState([]),[counts,setCounts]=useState({}),[text,setText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[filter,setFilter]=useState('all'),[page,setPage]=useState(0);
- const [warehouse,setWarehouse]=useState('main'),[mode,setMode]=useState('live');
+ const [warehouse,setWarehouse]=useState('main');
  const loadVersion=useRef(0);
- const visiblePools=pools.filter(p=>Boolean(p.backup_for)===(warehouse==='backup')&&p.is_test===(mode==='test')&&p.round_id===roundId).sort((a,b)=>prizeOrder.indexOf(a.prize_code)-prizeOrder.indexOf(b.prize_code));
+ const visiblePools=pools.filter(p=>Boolean(p.backup_for)===(warehouse==='backup')&&p.round_id===roundId).sort((a,b)=>prizeOrder.indexOf(a.prize_code)-prizeOrder.indexOf(b.prize_code));
  function choosePool(id){loadVersion.current++;setPoolId(id);setPage(0);setText('');setMessage('');setError('');setRows([]);setCounts({});}
- function switchScope(nextWarehouse,nextMode){
-  const nextRound=rounds.find(r=>r.id===roundId&&r.is_test===(nextMode==='test'))||rounds.find(r=>r.is_test===(nextMode==='test')&&r.status==='active')||rounds.find(r=>r.is_test===(nextMode==='test'));
-  setRoundId(nextRound?.id||'');
-  const candidates=pools.filter(p=>Boolean(p.backup_for)===(nextWarehouse==='backup')&&p.is_test===(nextMode==='test')&&p.round_id===nextRound?.id);
+ function switchScope(nextWarehouse){
+  const candidates=pools.filter(p=>Boolean(p.backup_for)===(nextWarehouse==='backup')&&p.round_id===roundId);
   const selected=candidates.find(p=>p.prize_code===pool?.prize_code)||candidates.find(p=>p.prize_code==='TP10k')||candidates[0];
-  setWarehouse(nextWarehouse);setMode(nextMode);choosePool(selected?.id||'');
+  setWarehouse(nextWarehouse);choosePool(selected?.id||'');
  }
  const pool=pools.find(p=>p.id===poolId);
  const pairedPool=pools.find(p=>pool?.backup_for?p.id===pool.backup_for:p.backup_for===pool?.id);
- useEffect(()=>{let alive=true;Promise.all([db.from('chatbot_voucher_pools').select('*').order('created_at',{ascending:false}),admin('rounds')]).then(([{data,error},rr])=>{if(!alive)return;if(error)throw error;setPools(data);setRounds(rr);const r=rr.find(r=>!r.is_test&&r.status==='active')||rr.find(r=>!r.is_test);setRoundId(r?.id||'');setPoolId(data.find(p=>p.round_id===r?.id&&!p.backup_for&&p.prize_code==='TP10k')?.id||'');}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[]);
+ useEffect(()=>{let alive=true;Promise.all([db.from('chatbot_voucher_pools').select('*').order('created_at',{ascending:false}),admin('rounds')]).then(([{data,error},rr])=>{if(!alive)return;if(error)throw error;setPools(data);setRounds(rr);const r=rr.find(r=>r.status==='active')||rr[0];setRoundId(r?.id||'');setPoolId(data.find(p=>p.round_id===r?.id&&!p.backup_for&&p.prize_code==='TP10k')?.id||'');}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;};},[]);
  async function load(id=poolId){
   const version=++loadVersion.current;
   if(!id){setLoading(false);return;}setLoading(true);setError('');
@@ -50,17 +48,17 @@ export default function ChatbotWarehouse({role}){
  async function download(){setBusy(true);setError('');try{
   const all=[];let offset=0;
   for(;;){const data=await admin('export',{pool_id:poolId,filter,offset});all.push(...data);if(data.length<1000)break;offset+=1000;}
-  const url=URL.createObjectURL(new Blob(['\uFEFFcode\n'+all.map(r=>r.code).join('\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`voucher-${pool?.prize_code||'codes'}-${pool?.is_test?'TEST':'LIVE'}-${pool?.backup_for?'BACKUP':'MAIN'}-${filter}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const url=URL.createObjectURL(new Blob(['\uFEFFcode\n'+all.map(r=>r.code).join('\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`voucher-${pool?.prize_code||'codes'}-${pool?.backup_for?'BACKUP':'MAIN'}-${filter}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }catch(e){setError(e.message);}finally{setBusy(false);}}
  return <section style={{color:'#1c1917'}}>
   <h2 style={{margin:'0 0 8px'}}>Kho mã chatbot</h2><p style={{color:'#6b7280',marginTop:0}}>Nhập mã cho từng giải thưởng · Theo dõi mã chưa phát và lịch sử cấp mã</p>
-    <label style={{fontSize:14,color:'#57534e'}}>Chế độ <select aria-label="Chế độ kho" value={mode} disabled={busy} onChange={e=>switchScope(warehouse,e.target.value)} style={{...input,margin:'8px 0 8px 8px'}}><option value="live">Sử dụng thật</option><option value="test">Thử nghiệm</option></select></label>
-  <label style={{display:'block',marginBottom:16,fontWeight:600}}>Đợt phát <select aria-label="Đợt phát" style={{...input,marginLeft:10}} disabled={busy} value={roundId} onChange={e=>{setRoundId(e.target.value);choosePool(pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup')&&p.prize_code===pool?.prize_code)?.id||pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup'))?.id||'');}}>{rounds.filter(r=>r.is_test===(mode==='test')).map(r=><option key={r.id} value={r.id}>{r.name} · {{draft:'Chuẩn bị',active:'Đang phát',closed:'Đã chốt'}[r.status]}</option>)}</select></label>
+
+  <label style={{display:'block',marginBottom:16,fontWeight:600}}>Đợt phát <select aria-label="Đợt phát" style={{...input,marginLeft:10}} disabled={busy} value={roundId} onChange={e=>{setRoundId(e.target.value);choosePool(pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup')&&p.prize_code===pool?.prize_code)?.id||pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup'))?.id||'');}}>{rounds.map(r=><option key={r.id} value={r.id}>{r.name} · {{draft:'Chuẩn bị',active:'Đang phát',closed:'Đã chốt'}[r.status]}</option>)}</select></label>
   <StockOverview roundId={roundId} refreshKey={overviewRefresh}/>
   {role==='owner'&&<ClearStock key={roundId} round={rounds.find(r=>r.id===roundId)} pools={pools} onCleared={()=>{load();setOverviewRefresh(x=>x+1);}}/>}
   <div style={{...box,padding:0,overflow:'hidden'}}>
    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,padding:'0 18px',borderBottom:'1px solid #e5e7eb',flexWrap:'wrap'}}>
-    <div role="tablist" aria-label="Loại kho" style={{display:'flex',gap:24}}>{[['main','Kho chính'],['backup','Kho backup']].map(([key,label])=><button key={key} role="tab" aria-selected={warehouse===key} aria-controls="warehouse-panel" id={`tab-${key}`} disabled={busy} onClick={()=>switchScope(key,mode)} style={{border:0,borderBottom:`3px solid ${warehouse===key?'#c96b24':'transparent'}`,background:'transparent',padding:'18px 2px 15px',fontSize:16,fontWeight:700,color:warehouse===key?'#a34e14':'#6b7280',cursor:'pointer'}}>{label}</button>)}</div>
+    <div role="tablist" aria-label="Loại kho" style={{display:'flex',gap:24}}>{[['main','Kho chính'],['backup','Kho backup']].map(([key,label])=><button key={key} role="tab" aria-selected={warehouse===key} aria-controls="warehouse-panel" id={`tab-${key}`} disabled={busy} onClick={()=>switchScope(key)} style={{border:0,borderBottom:`3px solid ${warehouse===key?'#c96b24':'transparent'}`,background:'transparent',padding:'18px 2px 15px',fontSize:16,fontWeight:700,color:warehouse===key?'#a34e14':'#6b7280',cursor:'pointer'}}>{label}</button>)}</div>
 
    </div>
    <div id="warehouse-panel" role="tabpanel" aria-labelledby={`tab-${warehouse}`} style={{padding:18}}>
@@ -73,12 +71,12 @@ export default function ChatbotWarehouse({role}){
     {warehouse==='backup'&&pool&&<p style={{fontSize:13,color:'#57534e',margin:'12px 0 0'}}>Kho chính tương ứng: <strong>{pairedPool?(prizeNames[pairedPool.prize_code]||pairedPool.name):'Chưa có kho ghép'}</strong></p>}
    </div>
   </div>
-  {mode==='test'&&<p style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:12}}>Đang xem mã thử nghiệm — không có giá trị đổi thưởng tại cửa hàng.</p>}
+
   {!poolId&&!error&&<p>Chưa có kho hoặc tài khoản không có quyền quản lý kho chatbot.</p>}
   {error&&<p role="alert" style={{color:'#b91c1c',background:'#fef2f2',padding:12}}>{error}</p>}
   {message&&<p role="status" style={{color:'#166534',background:'#f0fdf4',padding:12}}>{message}</p>}
   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,margin:'16px 0'}}>{Object.entries(labels).map(([key,label])=><div style={box} key={key}><div style={{color:'#6b7280'}}>{label}</div><strong style={{fontSize:28}}>{loading?'…':counts[key]??0}</strong></div>)}</div>
-  {canWrite&&rounds.find(r=>r.id===roundId)?.status!=='closed'&&<div style={box}><h3 style={{marginTop:0}}>Nhập mã vào {warehouse==='backup'?'kho backup':'kho chính'}</h3><p style={{fontWeight:600,color:'#a34e14'}}>{prizeNames[pool?.prize_code]||'Chưa chọn giải'} · {mode==='test'?'Thử nghiệm':'Sử dụng thật'}</p><p>Chọn file CSV/TXT một cột hoặc dán mỗi mã một dòng. Mã trùng được bỏ qua, không ghi đè mã cũ.</p>
+  {canWrite&&rounds.find(r=>r.id===roundId)?.status!=='closed'&&<div style={box}><h3 style={{marginTop:0}}>Nhập mã vào {warehouse==='backup'?'kho backup':'kho chính'}</h3><p style={{fontWeight:600,color:'#a34e14'}}>{prizeNames[pool?.prize_code]||'Chưa chọn giải'}</p><p>Chọn file CSV/TXT một cột hoặc dán mỗi mã một dòng. Mã trùng được bỏ qua, không ghi đè mã cũ.</p>
    <input aria-label="Chọn file mã voucher" type="file" accept=".csv,.txt" disabled={busy} onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setError('');try{if(f.size>1024*1024)throw new Error('File tối đa 1 MB.');setText(await f.text());}catch(err){setError(err.message);}e.target.value='';}}/>
    <textarea aria-label="Danh sách mã" placeholder={'ABCDE\nF7H9K'} rows={5} value={text} onChange={e=>setText(e.target.value)} disabled={busy} style={{...input,display:'block',width:'100%',boxSizing:'border-box',margin:'12px 0',fontFamily:'monospace'}}/>
    <button style={{...button,background:'#e99849',color:'#fff',border:0}} disabled={busy||!poolId||!text.trim()} onClick={importCodes}>{busy?'Đang xử lý…':'Nhập vào kho'}</button>
