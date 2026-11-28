@@ -34,3 +34,16 @@ The optimized prize flows end after the voucher message; no unsubscribe action i
 Flow `444794176` (Mở vòng quay): Kiểm tra mã → Điều kiện #3 → Còn mã / Hết mã. API path `stock_gate` maps to text field `3228400` (Trang thai kho vong quay); condition is exactly `OPEN`. Published and reopened in a fresh tab to verify. Uses TEST campaign until real stock is imported and launch is requested. No unsubscribe action. Channel button restoration awaits the lost destination URL. Each test backup pool has 10 random five-character test codes; real backup pools remain empty.
 
 Database integration checks are in `tests/chatbotStock.integration.sql`; all fixtures roll back. They cover 2/5 open, 3/5 closed, main priority, mapped backup after entrance closes, same-event replay across backup, no cross-prize fallback, and service-role-only execution. Run via a trusted SQL administration connection, not a browser client.
+
+## Warehouse administration (2026-11-29)
+
+- Owner: confirmed Google account dangnhan.mrt@gmail.com. Owner can grant manager/viewer by email. Roles are checked on the server for every operation; membership does not create an account or send email.
+- Manager: read/import/export. Viewer: read only. CSV export controls do not prevent a viewer from copying data they can already read.
+- Audit is server-written for imports, CSV pages, grants/revocations, issuing, round lifecycle and transfers. A verified Auth session is recorded once when an authorized user first accesses the warehouse, with its real creation timestamp. This is not a global failed-login log or a reconstruction of old logins.
+- Existing TEST and LIVE campaigns are retained. Each new round creates five main pools and five same-prize backups. New campaigns resolve through a service-only RPC; use the new campaign_id in all six Botcake API blocks.
+- Only one active round per mode. Closing a round disables issuance in both main/backup and stores counts by pool/status. Do this only after all outstanding spins are fulfilled; the automated 3/5 entrance gate does NOT close the administrative round.
+- Transfer moves only available, unexpired stock from a closed round to a draft of the same mode and same prize/warehouse type. Issued vouchers stay with the original round. Transfers cannot extend source expiry. Global code uniqueness is retained. Repeating a completed transfer moves zero vouchers.
+- CSV is a stock export, not a full disaster-recovery database backup. Snapshot and transfer history are kept in the database. Provider backup/restore policy has not been changed.
+- Legacy wheel RPCs in the shared database still have security-advisor warnings; this release does not certify or modify those unrelated functions. See https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable . Private admin tables intentionally have RLS with no direct-access policies: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy .
+
+Validation: 21 Node tests and production build; rollback-only database integration verifies owner/viewer/manager boundaries, denial of direct inserts, duplicate import, round activation/closure snapshot, transfer of unissued vouchers only, retained issued history and transfer replay.

@@ -34,3 +34,14 @@ test('stock errors fail closed and invalid actions never allocate',async()=>{
  const r=await h(request({action:'check_stock',campaign_id:'TEST'}));assert.equal(r.status,503);assert.equal((await r.json()).stock_gate,'CLOSED');
  assert.equal((await h(request({...body,action:'unknown'}))).status,400);
 });
+
+test('new rounds resolve authenticated campaign and route stock and issue',async()=>{
+ const campaign='ROUND_'+'a'.repeat(32);const pools=['TP10k','x2TP','M2T1','Upsiz','15%'].map(prizeCode=>({campaignId:campaign,prizeCode,poolId:prizeCode,isTest:true}));
+ const h=createHandler({config,resolveCampaign:async p=>{assert.equal(p.p_campaign,campaign);return pools;},rpc:async p=>{assert.equal(p.p_pool_id,'TP10k');return {status:'success',voucher_code:'ABCDE'};},stockRpc:async p=>{assert.equal(p.p_pool_ids.length,5);return {stock_gate:'OPEN'};}});
+ assert.equal((await(await h(request({...body,campaign_id:campaign}))).json()).voucher_code,'ABCDE');
+ assert.equal((await(await h(request({action:'check_stock',campaign_id:campaign}))).json()).stock_gate,'OPEN');
+});
+test('campaign resolver failure fails closed without allocating',async()=>{
+ const h=createHandler({config,resolveCampaign:async()=>{throw Error('private');},rpc:async()=>assert.fail('must not issue')});
+ const r=await h(request({action:'check_stock',campaign_id:'ROUND_'+'b'.repeat(32)}));assert.equal(r.status,503);assert.equal((await r.json()).stock_gate,'CLOSED');
+});

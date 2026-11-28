@@ -8,4 +8,4 @@ async function callRpc(name:string,params:unknown){
  if(!r.ok)throw new Error('RPC failed');
  return r.json();
 }
-Deno.serve(createHandler({config,rpc:(params:unknown)=>callRpc('chatbot_issue_code',params),stockRpc:(params:unknown)=>callRpc('chatbot_check_stock',params)}));
+Deno.serve(createHandler({config,rpc:(params:unknown)=>callRpc('chatbot_issue_code',params),stockRpc:(params:unknown)=>callRpc('chatbot_check_stock',params),resolveCampaign:(params:unknown)=>callRpc('chatbot_resolve_campaign',params)}));

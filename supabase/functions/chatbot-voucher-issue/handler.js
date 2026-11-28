@@ -1,6 +1,6 @@
 const json=(status,body)=>new Response(JSON.stringify({voucher_code:'',...body}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
 const hex=bytes=>Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
-export function createHandler({config,rpc,stockRpc}){
+export function createHandler({config,rpc,stockRpc,resolveCampaign}){
  return async function handler(req){
   if(req.method!=='POST')return json(405,{status:'method_not_allowed'});
   const token=(req.headers.get('authorization')||'').match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
@@ -17,8 +17,13 @@ export function createHandler({config,rpc,stockRpc}){
    const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}body=JSON.parse(new TextDecoder().decode(bytes));
   }catch{return json(400,{status:'invalid_json'});}
   if(!body||typeof body!=='object'||Array.isArray(body))return json(400,{status:'invalid_request'});
+  let campaignPools=(config.pools??[{...config,isTest:true}]).filter(p=>p.campaignId===body.campaign_id);
+  if(!campaignPools.length&&resolveCampaign&&typeof body.campaign_id==='string'&&/^ROUND_[a-f0-9]{32}$/.test(body.campaign_id)){
+   try{campaignPools=await resolveCampaign({p_campaign:body.campaign_id});if(!Array.isArray(campaignPools))throw new Error('Invalid campaign');}
+   catch{return json(503,{status:'temporarily_unavailable',stock_gate:'CLOSED'});}
+  }
   if(body.action==='check_stock'){
-   const pools=(config.pools??[]).filter(p=>p.campaignId===body.campaign_id);
+   const pools=campaignPools;
    if(pools.length!==5)return json(400,{status:'invalid_campaign',stock_gate:'CLOSED'});
    try{
     const result=await stockRpc({p_pool_ids:pools.map(p=>p.poolId)});
@@ -27,7 +32,7 @@ export function createHandler({config,rpc,stockRpc}){
    }catch{return json(503,{status:'temporarily_unavailable',stock_gate:'CLOSED'});}
   }
   if(body.action!==undefined&&body.action!=='issue')return json(400,{status:'invalid_action'});
-  const pool=(config.pools??[{...config,isTest:true}]).find(p=>p.campaignId===body.campaign_id&&p.prizeCode===body.prize_code);
+  const pool=campaignPools.find(p=>p.prizeCode===body.prize_code);
   if(!pool)return json(400,{status:'invalid_campaign'});
   if(typeof body.customer_id!=='string'||!/^\d{5,30}$/.test(body.customer_id))return json(400,{status:'invalid_customer'});
   if(body.event_id!==undefined && (typeof body.event_id!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(body.event_id)))return json(400,{status:'invalid_event'});
