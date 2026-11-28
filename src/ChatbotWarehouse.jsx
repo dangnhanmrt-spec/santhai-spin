@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {supabaseClient as db} from './supabase';
+import ClearStock from './ClearStock';
 import StockOverview from './StockOverview';
 import {admin} from './VoucherAdmin';
 import {parseVoucherCodes} from './voucherImport';
@@ -56,6 +57,7 @@ export default function ChatbotWarehouse({role}){
     <label style={{fontSize:14,color:'#57534e'}}>Chế độ <select aria-label="Chế độ kho" value={mode} disabled={busy} onChange={e=>switchScope(warehouse,e.target.value)} style={{...input,margin:'8px 0 8px 8px'}}><option value="live">Sử dụng thật</option><option value="test">Thử nghiệm</option></select></label>
   <label style={{display:'block',marginBottom:16,fontWeight:600}}>Đợt phát <select aria-label="Đợt phát" style={{...input,marginLeft:10}} disabled={busy} value={roundId} onChange={e=>{setRoundId(e.target.value);choosePool(pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup')&&p.prize_code===pool?.prize_code)?.id||pools.find(p=>p.round_id===e.target.value&&Boolean(p.backup_for)===(warehouse==='backup'))?.id||'');}}>{rounds.filter(r=>r.is_test===(mode==='test')).map(r=><option key={r.id} value={r.id}>{r.name} · {{draft:'Chuẩn bị',active:'Đang phát',closed:'Đã chốt'}[r.status]}</option>)}</select></label>
   <StockOverview roundId={roundId} refreshKey={overviewRefresh}/>
+  {role==='owner'&&<ClearStock key={roundId} round={rounds.find(r=>r.id===roundId)} pools={pools} onCleared={()=>{load();setOverviewRefresh(x=>x+1);}}/>}
   <div style={{...box,padding:0,overflow:'hidden'}}>
    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:16,padding:'0 18px',borderBottom:'1px solid #e5e7eb',flexWrap:'wrap'}}>
     <div role="tablist" aria-label="Loại kho" style={{display:'flex',gap:24}}>{[['main','Kho chính'],['backup','Kho backup']].map(([key,label])=><button key={key} role="tab" aria-selected={warehouse===key} aria-controls="warehouse-panel" id={`tab-${key}`} disabled={busy} onClick={()=>switchScope(key,mode)} style={{border:0,borderBottom:`3px solid ${warehouse===key?'#c96b24':'transparent'}`,background:'transparent',padding:'18px 2px 15px',fontSize:16,fontWeight:700,color:warehouse===key?'#a34e14':'#6b7280',cursor:'pointer'}}>{label}</button>)}</div>

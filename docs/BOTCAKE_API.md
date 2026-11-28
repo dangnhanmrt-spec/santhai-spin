@@ -47,3 +47,7 @@ Database integration checks are in `tests/chatbotStock.integration.sql`; all fix
 - Legacy wheel RPCs in the shared database still have security-advisor warnings; this release does not certify or modify those unrelated functions. See https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable . Private admin tables intentionally have RLS with no direct-access policies: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy .
 
 Validation: 21 Node tests and production build; rollback-only database integration verifies owner/viewer/manager boundaries, denial of direct inserts, duplicate import, round activation/closure snapshot, transfer of unissued vouchers only, retained issued history and transfer replay.
+
+## Clear selected unissued stock
+
+Owner-only `chatbot_clear_stock` supports a two-stage, 10-minute confirmation. Preview accepts 1–10 pools of one nonclosed round and snapshots exact available voucher IDs plus counts per main/backup pool. Commit locks pools and refuses changed stock; it only removes the confirmed `available` rows. Issued/redeemed/void rows remain intact. Repeated confirmation is idempotent. Removed rows are retained in a private archive and the action is audited; codes never issued can be imported again, while issued-code uniqueness remains enforced. UI selection resets on round changes, shows per-pool quantities and requires an explicit confirmation checkbox. Normal operation does not change campaign IDs or Botcake routing.
