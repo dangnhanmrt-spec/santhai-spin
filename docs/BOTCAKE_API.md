@@ -29,3 +29,8 @@ POST to the same endpoint with `{"action":"check_stock","campaign_id":"BOTCAKE_T
 Each primary pool has one backup linked via `backup_for`, with the same prize and test/live mode. Backup campaigns end in `_BACKUP` and cannot be addressed through the public issuance allowlist. Import real backup codes through the warehouse selector. Existing issuance requests remain unchanged: primary first, mapped backup only when primary is empty. Already-granted spins can issue regardless of the entrance gate. Both allocation and fallback happen in one transaction with a per-primary lock. Explicit event retries find the original allocation in either pool; Botcake requests without event_id still allocate per invocation.
 
 The optimized prize flows end after the voucher message; no unsubscribe action is needed. The entrance closed message should say the wheel has closed, not that every voucher has been issued.
+
+### Saved Botcake entrance flow
+Flow `444794176` (Mở vòng quay): Kiểm tra mã → Điều kiện #3 → Còn mã / Hết mã. API path `stock_gate` maps to text field `3228400` (Trang thai kho vong quay); condition is exactly `OPEN`. Published and reopened in a fresh tab to verify. Uses TEST campaign until real stock is imported and launch is requested. No unsubscribe action. Channel button restoration awaits the lost destination URL. Each test backup pool has 10 random five-character test codes; real backup pools remain empty.
+
+Database integration checks are in `tests/chatbotStock.integration.sql`; all fixtures roll back. They cover 2/5 open, 3/5 closed, main priority, mapped backup after entrance closes, same-event replay across backup, no cross-prize fallback, and service-role-only execution. Run via a trusted SQL administration connection, not a browser client.
